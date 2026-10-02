@@ -2,6 +2,7 @@ import { formatRs, type VatPot } from '@vat-assist/shared';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Text, View } from 'react-native';
+import { useFeatures } from '@/features';
 import { useSession } from '@/session';
 import { C, F } from '@/theme';
 import { Button, Err, P, Screen } from '@/ui';
@@ -11,6 +12,7 @@ const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slic
 /** The yellow duplicate slip: MRA's share of the money in the till. */
 export default function Home() {
   const { api, orgId, t, locale, signOut } = useSession();
+  const features = useFeatures();
   const [pot, setPot] = useState<VatPot | null>(null);
   const [questions, setQuestions] = useState(0);
   const [toConfirm, setToConfirm] = useState(0);
@@ -48,10 +50,15 @@ export default function Home() {
       <Err>{error}</Err>
       <Button title={t('home.snap')} onPress={() => router.push('/capture')} />
       <Button title={t('home.todaySales')} kind="quiet" onPress={() => router.push('/sales')} />
+      {features.credit_invoices && <Button title={t('inv.title')} kind="quiet" onPress={() => router.push('/invoice-new')} />}
+      {features.record_payments && <Button title={t('pay.receiveTitle')} kind="quiet" onPress={() => router.push('/record-payment?side=receive')} />}
+      {features.record_payments && <Button title={t('pay.payTitle')} kind="quiet" onPress={() => router.push('/record-payment?side=pay')} />}
       {toConfirm > 0 && <Button title={`Payments to confirm: ${toConfirm}`} onPress={() => router.push('/payments')} />}
       {questions > 0 && <Button title={t('home.questions', { count: questions })} kind="quiet" onPress={() => router.push('/queries')} />}
       <P muted> </P>
       <Button title="Payment details" kind="quiet" onPress={() => router.push('/payment-settings')} />
+      <Button title={t('set.title')} kind="quiet" onPress={() => router.push('/settings')} />
+      {features.opening_balances && <Button title={t('onb.openingTitle')} kind="quiet" onPress={() => router.push('/opening-balances')} />}
       <Button title={t('common.signOut')} kind="quiet" onPress={() => signOut().then(() => router.replace('/sign-in'))} />
     </Screen>
   );

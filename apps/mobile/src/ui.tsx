@@ -46,7 +46,7 @@ export function Field({ label, ...input }: { label: string } & TextInputProps) {
   return (
     <View style={{ marginBottom: 14 }}>
       <Text style={s.label}>{label}</Text>
-      <TextInput placeholderTextColor={C.muted} style={s.input} {...input} />
+      <TextInput placeholderTextColor={C.muted} style={s.input} accessibilityLabel={label} {...input} />
     </View>
   );
 }

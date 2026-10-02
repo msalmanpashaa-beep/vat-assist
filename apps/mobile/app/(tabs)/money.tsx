@@ -1,7 +1,9 @@
 import { formatRs } from '@vat-assist/shared';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Share, Text, View } from 'react-native';
+import { Balances } from '@/Balances';
+import { useFeatures } from '@/features';
 import { useSession } from '@/session';
 import { C, F } from '@/theme';
 import { Button, Card, Chips, Err, H1, H2, P, Screen } from '@/ui';
@@ -14,6 +16,7 @@ const BUCKETS = ['0-30', '31-60', '61-90', '90+'];
 /** Who owes me, whom I owe, and a pay link to send for any sales invoice. */
 export default function Money() {
   const { api, orgId, t, locale } = useSession();
+  const features = useFeatures();
   const [side, setSide] = useState<'receivable' | 'payable'>('receivable');
   const [ageing, setAgeing] = useState<Ageing | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -40,6 +43,9 @@ export default function Money() {
   return (
     <Screen>
       <H1>{t('nav.money')}</H1>
+      <Balances />
+      {features.record_payments && <Button title={side === 'receivable' ? t('pay.receiveTitle') : t('pay.payTitle')} onPress={() => router.push(`/record-payment?side=${side === 'receivable' ? 'receive' : 'pay'}`)} />}
+      {features.credit_invoices && side === 'receivable' && <Button title={t('inv.title')} kind="quiet" onPress={() => router.push('/invoice-new')} />}
       <Chips value={side} onChange={setSide} options={[{ value: 'receivable', label: t('money.owesMe') }, { value: 'payable', label: t('money.iOwe') }]} />
       {ageing && (
         <Card>

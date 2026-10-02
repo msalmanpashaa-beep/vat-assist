@@ -25,7 +25,7 @@ export default function Onboarding() {
         },
       });
       await reloadMe();
-      router.replace('/home');
+      router.replace('/opening-balances?first=1');
     } catch (e) {
       setError((e as Error).message);
     } finally {
