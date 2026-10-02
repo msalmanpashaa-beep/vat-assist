@@ -159,7 +159,9 @@ describe('admin console', () => {
     const inv = await call('POST', '/admin/staff', { token: admin, body: { email, fullName: `E2E Reviewer ${run}`, role: 'reviewer' } });
     newUserId = inv.userId;
     await call('POST', '/auth/staff/login', { body: { email, password: 'Reviewer-E2E-2026!' }, expect: [401] });
-    const token = inv.inviteUrl.split('/invite/')[1];
+    expect(inv.email.status).toBe('sent');
+    const [mail] = await call('GET', `/dev/mail/outbox?to=${encodeURIComponent(email)}`);
+    const token = /\/invite\/([A-Za-z0-9_-]+)/.exec(mail.text)![1] as string;
     const acc = await call('POST', '/auth/staff/invite/accept', { body: { token, password: 'Reviewer-E2E-2026!' } });
     expect(acc.totpEnrolled).toBe(false);
     const setup = await call('POST', '/auth/staff/totp/setup', { headers: { authorization: `Bearer ${acc.mfaToken}` } });

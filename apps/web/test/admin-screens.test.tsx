@@ -13,8 +13,8 @@ const senior: StaffRow = { ...reviewer, user_id: 'u2', email: 'senior@nexgen.tes
 const client: ClientRow = { org_id: 'o1', org_name: 'Boutik Demo', legal_name: 'Boutik Demo Ltd', vat_number: '99999902', staff: [{ userId: 'u1', name: 'Demo Reviewer', email: 'reviewer@nexgen.test', role: 'reviewer' }], features: resolveFeatures(null) };
 
 describe('Staff screen', () => {
-  it('checks the invite before sending, then shows the one-time link', async () => {
-    mockApi(() => ({ userId: 'u9', inviteUrl: 'http://localhost:3000/invite/abc123' }));
+  it('checks the invite before sending, then confirms it was emailed without showing the link', async () => {
+    mockApi(() => ({ userId: 'u9', inviteUrl: null, email: { status: 'sent', provider: 'postmark', error: null } }));
     render(<StaffAdmin staff={[reviewer]} />);
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'not-an-email' } });
     fireEvent.submit(screen.getByRole('form', { name: 'Invite staff' }));
@@ -24,7 +24,8 @@ describe('Staff screen', () => {
     fireEvent.change(screen.getByLabelText('Full name'), { target: { value: 'New Reviewer' } });
     fireEvent.change(screen.getByLabelText('Role'), { target: { value: 'senior_reviewer' } });
     fireEvent.submit(screen.getByRole('form', { name: 'Invite staff' }));
-    expect((await screen.findByRole('status')).textContent).toMatch(/invite\/abc123/);
+    expect((await screen.findByRole('status')).textContent).toMatch(/Invite emailed to new.reviewer@nexgen.test via Postmark/);
+    expect(screen.queryByText('Copy')).toBeNull();
     expect(calls[0]).toMatchObject({ url: '/api/proxy/admin/staff', method: 'POST', body: { email: 'new.reviewer@nexgen.test', fullName: 'New Reviewer', role: 'senior_reviewer' } });
   });
 
@@ -69,5 +70,28 @@ describe('Feature flags screen', () => {
     fireEvent.click(box);
     await waitFor(() => expect(calls[0]).toMatchObject({ url: '/api/proxy/admin/orgs/o1/features', method: 'PUT', body: { features: { credit_invoices: false } } }));
     await waitFor(() => expect((screen.getByLabelText('Invoices on credit for Boutik Demo') as HTMLInputElement).checked).toBe(false));
+  });
+});
+
+describe('Staff screen: invite email delivery', () => {
+  it('when the email cannot be sent, says why and gives the admin the link to pass on', async () => {
+    mockApi(() => ({ userId: 'u9', inviteUrl: 'http://localhost:3000/invite/abc123', email: { status: 'failed', provider: 'postmark', error: 'postmark: Sender signature not confirmed (ErrorCode 400)' } }));
+    render(<StaffAdmin staff={[reviewer]} />);
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'new.reviewer@nexgen.test' } });
+    fireEvent.change(screen.getByLabelText('Full name'), { target: { value: 'New Reviewer' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Invite staff' }));
+    const status = (await screen.findByRole('status')).textContent ?? '';
+    expect(status).toMatch(/could not be sent/);
+    expect(status).toMatch(/Sender signature not confirmed/);
+    expect(status).toMatch(/invite\/abc123/);
+  });
+
+  it('shows in the staff list whether the invite email went out', () => {
+    render(<StaffAdmin staff={[
+      { ...reviewer, invite_pending: true, invite_email: { status: 'sent', provider: 'postmark', error: null, at: '2026-10-02T08:00:00Z' } },
+      { ...senior, invite_pending: true, invite_email: { status: 'failed', provider: 'resend', error: 'resend: domain not verified', at: '2026-10-02T08:05:00Z' } },
+    ]} />);
+    expect(screen.getByText(/Invite emailed 02\/10\/2026/)).toBeTruthy();
+    expect(screen.getByText(/Invite email failed: resend: domain not verified/)).toBeTruthy();
   });
 });
