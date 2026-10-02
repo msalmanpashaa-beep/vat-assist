@@ -1,8 +1,10 @@
 import { createServer } from 'node:http';
+import { type ParsedMail, simpleParser } from 'mailparser';
+import { SMTPServer } from 'smtp-server';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 import { AppConfig, type Env } from '../src/config';
-import { ConsoleMail, createMailProvider, formatAddress, M365Mail, MailError, PostmarkMail, ResendMail } from '../src/modules/mail/mail';
+import { ConsoleMail, createMailProvider, formatAddress, M365Mail, MailError, PostmarkMail, ResendMail, SmtpMail, smtpTransportOptions } from '../src/modules/mail/mail';
 import { staffInviteEmail } from '../src/modules/mail/templates';
 
 const message = {
@@ -166,7 +168,7 @@ describe('choosing the provider', () => {
     const prod: Partial<Env> = { NODE_ENV: 'production', MAIL_PROVIDER: 'postmark', MAIL_FROM: 'VAT Assist <invites@example.com>' };
     const problems = AppConfig.productionProblems({ ...cfg({}).env, ...prod });
     expect(problems).toContain('MAIL_FROM must be a real, verified sender address');
-    expect(AppConfig.productionProblems({ ...cfg({}).env, NODE_ENV: 'production' })).toContain('MAIL_PROVIDER must be postmark, resend or m365');
+    expect(AppConfig.productionProblems({ ...cfg({}).env, NODE_ENV: 'production' })).toContain('MAIL_PROVIDER must be smtp, postmark, resend or m365');
   });
 });
 
@@ -224,5 +226,105 @@ describe('over real HTTP', () => {
 
   it('the development provider fails on purpose for .invalid addresses', async () => {
     await expect(new ConsoleMail().send({ ...message, to: 'someone@fail.invalid' })).rejects.toMatchObject({ provider: 'console', retryable: false });
+  });
+});
+
+/** An in-process SMTP server that checks the sign-in and keeps what it receives, like a cPanel mail server would. */
+async function smtpSink(o: { user: string; pass: string; dataCode?: number; rcptCode?: number }) {
+  const inbox: ParsedMail[] = [];
+  const logins: string[] = [];
+  const server = new SMTPServer({
+    disabledCommands: ['STARTTLS'],
+    allowInsecureAuth: true,
+    logger: false,
+    onAuth(auth, _session, cb) {
+      logins.push(`${auth.username}:${auth.password}`);
+      if (auth.username === o.user && auth.password === o.pass) return cb(null, { user: auth.username });
+      return cb(Object.assign(new Error('Authentication failed'), { responseCode: 535 }));
+    },
+    onRcptTo(_address, _session, cb) {
+      if (o.rcptCode) return cb(Object.assign(new Error('No such user here'), { responseCode: o.rcptCode }));
+      return cb();
+    },
+    onData(stream, _session, cb) {
+      if (o.dataCode) {
+        stream.on('end', () => cb(Object.assign(new Error('Mailbox busy, try again later'), { responseCode: o.dataCode })));
+        stream.resume();
+        return;
+      }
+      simpleParser(stream).then((m) => { inbox.push(m); cb(); }, (e: Error) => cb(e));
+    },
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+  const port = (server.server.address() as AddressInfo).port;
+  return { inbox, logins, port, close: () => new Promise<void>((r) => server.close(() => r())) };
+}
+
+describe('SMTP (a hosted mailbox, e.g. cPanel)', () => {
+  const box = { host: '127.0.0.1', tls: 'none' as const, user: 'invites@nex-gen.africa', pass: 'mailbox-pass', from: 'Nex-Gen Africa <invites@nex-gen.africa>', replyTo: 'connect@nex-gen.africa' };
+  const link = 'https://app.nex-gen.africa/invite/tok_1234567890';
+  const env = (extra: Record<string, string>) =>
+    AppConfig.fromEnv({ DATABASE_URL: 'postgres://localhost/x', JWT_SECRET: 'x'.repeat(48), DATA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'), ...extra } as NodeJS.ProcessEnv);
+
+  it('signs in, then delivers text and HTML with the reply-to and kind header, over a real SMTP session', async () => {
+    const sink = await smtpSink({ user: box.user, pass: box.pass });
+    try {
+      const sent = await new SmtpMail({ ...box, port: sink.port }).send({ ...message, text: `Hello ${link}`, html: `<p>Hello <a href="${link}">set up</a></p>` });
+      expect(sent.provider).toBe('smtp');
+      expect(sent.id).toMatch(/@/);
+      expect(sink.logins).toEqual([`${box.user}:${box.pass}`]);
+      const got = sink.inbox[0]!;
+      expect(got.from?.text).toContain('invites@nex-gen.africa');
+      const to = Array.isArray(got.to) ? got.to[0] : got.to;
+      expect(to?.text).toContain('New Reviewer');
+      expect(to?.text).toContain('new.reviewer@nexgen.test');
+      expect(got.replyTo?.text).toContain('connect@nex-gen.africa');
+      expect(got.subject).toBe(message.subject);
+      expect(got.text).toContain(link);
+      expect(got.html).toContain(`href="${link}"`);
+      expect(got.headers.get('x-vat-assist-kind')).toBe('staff_invite');
+    } finally {
+      await sink.close();
+    }
+  });
+
+  it('a wrong mailbox password is permanent, and the message says how to fix it', async () => {
+    const sink = await smtpSink({ user: box.user, pass: 'the-real-one' });
+    try {
+      const err = await failure(new SmtpMail({ ...box, port: sink.port }).send(message));
+      expect(err).toMatchObject({ provider: 'smtp', retryable: false });
+      expect(err.message).toContain('full address as SMTP_USER');
+      expect(sink.inbox).toHaveLength(0);
+    } finally {
+      await sink.close();
+    }
+  });
+
+  it('a temporary refusal (451) is retryable; an unknown recipient (550) is not', async () => {
+    const busy = await smtpSink({ user: box.user, pass: box.pass, dataCode: 451 });
+    const unknown = await smtpSink({ user: box.user, pass: box.pass, rcptCode: 550 });
+    try {
+      expect(await failure(new SmtpMail({ ...box, port: busy.port }).send(message))).toMatchObject({ retryable: true, status: 451 });
+      expect(await failure(new SmtpMail({ ...box, port: unknown.port }).send(message))).toMatchObject({ retryable: false, status: 550 });
+    } finally {
+      await busy.close();
+      await unknown.close();
+    }
+  });
+
+  it('a mail server that cannot be reached is retryable', async () => {
+    const err = await failure(new SmtpMail({ ...box, port: 1 }).send(message));
+    expect(err).toMatchObject({ provider: 'smtp', retryable: true });
+    expect(err.message).toContain('could not reach the mail server');
+  });
+
+  it('TLS: 465 is TLS from the start, 587 must upgrade, plaintext only for a local test server', () => {
+    expect(smtpTransportOptions({ ...box, port: 465, tls: 'implicit' })).toMatchObject({ secure: true, requireTLS: false, ignoreTLS: false });
+    expect(smtpTransportOptions({ ...box, port: 587, tls: 'starttls' })).toMatchObject({ secure: false, requireTLS: true, ignoreTLS: false });
+    const cpanel = { MAIL_PROVIDER: 'smtp', SMTP_HOST: 'mail.nex-gen.africa', SMTP_USER: box.user, SMTP_PASS: 'x', MAIL_FROM: box.from };
+    expect(createMailProvider(env(cpanel))).toBeInstanceOf(SmtpMail);
+    expect(() => createMailProvider(env({ ...cpanel, SMTP_TLS: 'none' }))).toThrow('only allowed for a local test server');
+    expect(() => createMailProvider(env({ MAIL_PROVIDER: 'smtp' }))).toThrow('SMTP_HOST, SMTP_USER, SMTP_PASS');
+    expect(AppConfig.productionProblems({ ...env(cpanel).env, NODE_ENV: 'production', SMTP_TLS: 'none' })).toContain('SMTP_TLS=none is not allowed in production');
   });
 });

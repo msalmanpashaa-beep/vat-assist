@@ -95,3 +95,13 @@ describe('Staff screen: invite email delivery', () => {
     expect(screen.getByText(/Invite email failed: resend: domain not verified/)).toBeTruthy();
   });
 });
+
+describe('Staff screen: email set-up check', () => {
+  it('sends a test email to the admin and says where it went', async () => {
+    mockApi(() => ({ to: 'admin@nexgen.test', status: 'sent', provider: 'smtp', error: null }));
+    render(<StaffAdmin staff={[reviewer]} />);
+    fireEvent.click(screen.getByText('Send a test email to me'));
+    expect((await screen.findByRole('status')).textContent).toMatch(/Test email sent to admin@nexgen.test via your mail server \(SMTP\)/);
+    expect(calls[0]).toMatchObject({ url: '/api/proxy/admin/mail/test', method: 'POST' });
+  });
+});
