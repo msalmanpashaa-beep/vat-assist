@@ -10,3 +10,4 @@ dist
 demo-output
 storage-dev
 coverage
+*.tsbuildinfo
