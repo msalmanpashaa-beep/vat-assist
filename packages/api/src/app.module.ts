@@ -5,6 +5,7 @@ import { HealthController } from './health.controller';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CoreModule } from './modules/core/core.module';
+import { MailModule } from './modules/mail/mail.module';
 import { AuthGuard } from './modules/core/guards';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
@@ -21,7 +22,7 @@ import { VatModule } from './modules/vat/vat.module';
  */
 @Module({
   imports: [
-    CoreModule, AuthModule, OrgsModule, LedgerModule, DocumentsModule, VatModule,
+    CoreModule, MailModule, AuthModule, OrgsModule, LedgerModule, DocumentsModule, VatModule,
     ReviewModule, PaymentsModule, NotificationsModule, AdminModule, OwnerModule,
   ],
   controllers: [HealthController],

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { type FeatureKey, FEATURE_KEYS, resolveFeatures, type StaffRole } from '@vat-assist/shared';
 import { randomBytes } from 'node:crypto';
 import { AppConfig } from '../../config';
@@ -7,6 +7,8 @@ import { randomToken, sha256Hex } from '../../common/crypto';
 import { forbidden, notFound } from '../../common/errors';
 import { Db } from '../../db/db.service';
 import { AuditService } from '../core/audit.service';
+import { MAIL_PROVIDER, MailError, type MailProvider } from '../mail/mail';
+import { staffInviteEmail } from '../mail/templates';
 import { RemindersService } from '../notifications/reminders.service';
 
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
@@ -21,7 +23,13 @@ export function newRecoveryCode(): string {
 export interface StaffRow {
   user_id: string; email: string; full_name: string | null; roles: string[] | null; totp_enabled: boolean; disabled: boolean;
   invite_pending: boolean; recovery_codes_left: number; client_count: number;
+  /** The latest invite email: whether it went out, through which provider. */
+  invite_email?: { status: 'sent' | 'failed'; provider: string; error: string | null; at: Date } | null;
 }
+
+const ROLE_LABEL: Record<StaffRole, string> = {
+  reviewer: 'a reviewer', senior_reviewer: 'a senior reviewer (you sign off returns)', admin: 'an administrator', support: 'support staff',
+};
 
 /**
  * Nex-Gen administration. Every write goes through a SECURITY DEFINER function that re-checks the caller is a
@@ -37,6 +45,7 @@ export class AdminService {
     private readonly db: Db,
     private readonly audit: AuditService,
     private readonly reminders: RemindersService,
+    @Inject(MAIL_PROVIDER) private readonly mail: MailProvider,
   ) {}
 
   async requireAdmin(a: Actor): Promise<void> {
@@ -55,10 +64,21 @@ export class AdminService {
 
   async staff(a: Actor): Promise<StaffRow[]> {
     await this.requireAdmin(a);
-    return this.db.run(userCtx(a), (tx) => tx.many<StaffRow>(`select * from app.admin_staff_list()`));
+    return this.db.run(userCtx(a), async (tx) => {
+      const rows = await tx.many<StaffRow>(`select * from app.admin_staff_list()`);
+      const mails = await tx.many<{ related_user_id: string; status: 'sent' | 'failed'; provider: string; error: string | null; created_at: Date }>(
+        `select distinct on (related_user_id) related_user_id, status, provider, error, created_at
+         from email_messages where kind = 'staff_invite' order by related_user_id, created_at desc`,
+      );
+      const latest = new Map(mails.map((m) => [m.related_user_id, m]));
+      return rows.map((r) => {
+        const m = latest.get(r.user_id);
+        return { ...r, invite_email: m ? { status: m.status, provider: m.provider, error: m.error, at: m.created_at } : null };
+      });
+    });
   }
 
-  /** New staff (or an existing one's password reset): a one-time link, valid for 7 days, to set a password. */
+  /** New staff (or an existing one's password reset): emails a one-time link, valid for 7 days, to set a password. */
   async invite(a: Actor, email: string, fullName: string, role: StaffRole, orgIds: string[] = []) {
     await this.requireAdmin(a);
     const token = randomToken(32);
@@ -73,10 +93,39 @@ export class AdminService {
       });
     }
     const inviteUrl = `${this.cfg.env.WEB_BASE_URL}/invite/${token}`;
-    // No mail provider is configured yet: the link is logged and returned to the admin who sends it.
-    this.log.log(`Invite for ${email} (${role}): ${inviteUrl}`);
-    await this.auditIn(await this.platformId(), 'staff.invited', 'user', user_id, a, { email, role, clients: orgIds.length });
-    return { userId: user_id, inviteUrl, expiresAt, assignedClients: orgIds.length };
+    const inviter = await this.db.run(userCtx(a), (tx) =>
+      tx.maybe<{ full_name: string | null; email: string | null }>(`select full_name, email::text as email from users where id = $1`, [a.userId]),
+    );
+    const content = staffInviteEmail({
+      fullName, roleLabel: ROLE_LABEL[role], inviteUrl, expiresAt, invitedBy: inviter?.full_name ?? inviter?.email ?? null, clients: orgIds.length,
+    });
+    let delivery: { status: 'sent' | 'failed'; provider: string; messageId: string | null; error: string | null };
+    try {
+      const sent = await this.mail.send({ to: email, toName: fullName, ...content, tag: 'staff_invite', idempotencyKey: `staff-invite-${sha256Hex(token).slice(0, 32)}` });
+      delivery = { status: 'sent', provider: sent.provider, messageId: sent.id, error: null };
+    } catch (e) {
+      const err = e instanceof MailError ? e : new MailError(e instanceof Error ? e.message : String(e), this.mail.name, true);
+      this.log.warn(`Invite email to ${email} failed: ${err.message}`);
+      delivery = { status: 'failed', provider: err.provider, messageId: null, error: err.message.slice(0, 500) };
+    }
+    await this.db.run(userCtx(a), (tx) =>
+      tx.exec(
+        `insert into email_messages (kind, to_email, subject, provider, provider_message_id, status, error, related_user_id, created_by)
+         values ('staff_invite', $1, $2, $3, $4, $5, $6, $7, $8)`,
+        [email, content.subject, delivery.provider, delivery.messageId, delivery.status, delivery.error, user_id, a.userId],
+      ),
+    );
+    await this.auditIn(await this.platformId(), 'staff.invited', 'user', user_id, a, {
+      email, role, clients: orgIds.length, emailStatus: delivery.status, provider: delivery.provider,
+    });
+    // The link travels only by email. If the email could not be sent, the admin gets it to pass on another way.
+    return {
+      userId: user_id,
+      expiresAt,
+      assignedClients: orgIds.length,
+      email: { status: delivery.status, provider: delivery.provider, error: delivery.error },
+      inviteUrl: delivery.status === 'failed' ? inviteUrl : null,
+    };
   }
 
   async resendInvite(a: Actor, userId: string) {

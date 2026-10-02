@@ -34,6 +34,22 @@ const EnvSchema = z.object({
   /** Reverse proxies in front of the API (load balancer, the web app's /api/pay relay). Used for per-client rate limits. */
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
   PAYMENTS_MODE: z.enum(['mock', 'live']).default('mock'),
+  /** Staff invite emails. console prints them (development); postmark, resend or m365 send them. */
+  MAIL_PROVIDER: z.enum(['console', 'postmark', 'resend', 'm365']).default('console'),
+  /** Sender for Postmark and Resend (a verified domain or sender signature). Microsoft 365 sends as M365_SENDER. */
+  MAIL_FROM: z.string().min(3).default('VAT Assist <no-reply@localhost>'),
+  MAIL_REPLY_TO: optional,
+  POSTMARK_SERVER_TOKEN: optional,
+  POSTMARK_MESSAGE_STREAM: z.string().default('outbound'),
+  POSTMARK_API_URL: z.string().url().default('https://api.postmarkapp.com'),
+  RESEND_API_KEY: optional,
+  RESEND_API_URL: z.string().url().default('https://api.resend.com'),
+  M365_TENANT_ID: optional,
+  M365_CLIENT_ID: optional,
+  M365_CLIENT_SECRET: optional,
+  M365_SENDER: optional,
+  M365_LOGIN_URL: z.string().url().default('https://login.microsoftonline.com'),
+  M365_GRAPH_URL: z.string().url().default('https://graph.microsoft.com'),
   MIPS_API_URL: z.string().url().default('https://api.mips.mu/api'),
   MIPS_ID_MERCHANT: optional,
   MIPS_ID_ENTITY: optional,
@@ -81,6 +97,10 @@ export class AppConfig {
     if (env.EXTRACTION_PROVIDER === 'mock') p.push('EXTRACTION_PROVIDER must not be mock');
     if (env.PAYMENTS_MODE === 'mock') p.push('PAYMENTS_MODE must be live');
     if (env.MESSAGING_PROVIDER === 'console') p.push('MESSAGING_PROVIDER must not be console');
+    if (env.MAIL_PROVIDER === 'console') p.push('MAIL_PROVIDER must be postmark, resend or m365');
+    if ((env.MAIL_PROVIDER === 'postmark' || env.MAIL_PROVIDER === 'resend') && /@(localhost|example\.com)\b/.test(env.MAIL_FROM)) {
+      p.push('MAIL_FROM must be a real, verified sender address');
+    }
     if (!env.PUBLIC_BASE_URL.startsWith('https://')) p.push('PUBLIC_BASE_URL must be https');
     if (env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET === 'whsec_dev_only_secret') p.push('STRIPE_WEBHOOK_SECRET must be set');
     return p;
