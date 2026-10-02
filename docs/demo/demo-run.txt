@@ -1,0 +1,84 @@
+VAT Assist demo against http://localhost:4000
+
+ 1. Shop owner signs in with an SMS code (Kreol chosen as language)
+    signed in +23057100001
+
+ 2. Onboarding: business details, then opening balances on the start date
+    organisation db8017b2-147d-406d-9fdb-2c0e1103133d; first period due 2026-10-20 (electronic 2026-11-03)
+    opening journal entry #1, 2 open items carried into ageing
+
+ 3. Nex-Gen admin signs in (password + authenticator) and assigns a reviewer and a senior reviewer
+    assigned reviewer@nexgen.test and senior@nexgen.test
+
+ 4. Owner photographs purchase invoices; the pipeline checks quality, duplicates and reads them
+    INV-0457: awaiting_owner, confidence 0.97, flags []
+    answered "on credit, stock": posted
+    BILL-88231: answered "paid by bank, utilities": posted
+    handwritten receipt: needs_review because [missing_supplier_vat_number, not_marked_vat_invoice, buyer_name_mismatch]
+    same invoice uploaded again: duplicate
+    blurred photo: rejected_quality [blurred]
+
+ 5. Sales: one day of takings and one invoice on credit
+    takings 12/09: Rs 6,900 standard-rated (VAT Rs 900 inside), Rs 800 zero-rated, Rs 200 exempt
+    invoice INV-00001: Rs 4,600.00 due 2026-10-15
+
+ 6. Owner sets how customers can pay: Juice, the MCB account, and cards through MIPS
+    saved
+
+ 7. Customer pays Rs 2,000 by Juice from the pay link, attaches the screenshot; the shop confirms
+    pay link shows Rs 2,000.00 to Boutik Demo, reference VARF44S4; ways to pay: card (mips), juice, bank_transfer
+    owner is told: Hotel Demo Ltd says Rs 2,000.00 by juice, ref VARF44S4, screenshot attached
+    confirmed: receipt posted against INV-00001; the link now shows paid
+
+ 8. A bank transfer the customer says they made, but nothing arrived: the shop rejects it
+    second claim on the same link refused while the first was pending; rejected; link still open
+
+ 9. Customer pays Rs 1,000 by card through MIPS; the encrypted IMN confirms it
+    payment zone received (246 characters of HTML to embed)
+    an IMN that does not decrypt is rejected (400)
+    IMN {"received":true}, repeat {"received":true,"duplicate":true}
+
+10. Owner books the Nex-Gen onboarding call: Rs 25 deposit by card through Stripe
+    pay Nex-Gen Africa Rs 25.00, reference VAH4BKPZ; ways to pay: card, juice, bank_transfer
+    forged signature refused, first delivery {"received":true}, retry {"received":true,"duplicate":true}; booking confirmed; Nex-Gen output VAT Rs 3.26
+
+11. Owner pays the opening supplier balance; ageing for both sides
+    customers owe Rs 2,800.00 {"0-30":160000,"31-60":0,"61-90":0,"90+":120000}
+    we owe suppliers Rs 4,600.00 {"0-30":0,"31-60":460000,"61-90":0,"90+":0}
+
+12. VAT Pot for Q3, then the owner taps "I am done"
+    output Rs 1,500.00 - input Rs 990.00 = set aside Rs 510.00; Rs 208.70 of it is on sales not yet paid
+
+13. Reviewer: portfolio and queue, a question to the owner, the answer, approval
+    portfolio: Boutik Demo Q3 2026 in_review risk 10
+    approved and posted (entry #11); question resolved
+
+14. Return: reviewer drafts, only a senior reviewer can sign off
+    draft v1: output Rs 1,500.00, input Rs 990.00, payable Rs 510.00
+    reviewer sign-off refused (403)
+    signed off; fingerprint 384bd7cc17ac82f3...; Q3 is now locked
+
+15. A late purchase invoice dated 25/09 arrives after sign-off
+    posted; recorded late: true (Recorded after Q3 2026 was signed off)
+    late sales invoice INV-00002: posted into the next period, late=true; a blocking question was raised automatically
+
+16. Filing: guide, filing pack PDF, MRA acknowledgement, payment, close
+    Standard-rated supplies, excluding VAT: Rs 10,000.00
+    Zero-rated supplies: Rs 800.00
+    Exempt supplies: Rs 200.00
+    Output tax: Rs 1,500.00
+    Purchases on which you claim VAT, excluding VAT: Rs 6,600.00
+    Input tax claimed: Rs 990.00
+    VAT payable: Rs 510.00
+    filing pack saved: demo-output/filing-pack-Q3-2026.pdf (5 KB)
+    2026-10-01: open | 2026-07-01: closed
+
+17. Reminders the day before (Kreol for this owner) and tenant isolation
+    eve of the booking: {"queued":1,"sent":1,"failed":0}
+    eve of the Q4 deadline: {"queued":1,"sent":1,"failed":0}
+    another shop owner cannot read Boutik Demo (refused)
+
+18. Audit trail: hash chain verifies end to end
+    {"ok":true,"checked":63,"firstBadSeq":null,"head":{"seq":63,"hash":"19e5e577294023b65204daf378d74cbac6daf237b5bc102e5fbf286ac2fcaa0e"}}
+
+Demo finished: every check passed.

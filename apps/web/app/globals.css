@@ -1,0 +1,77 @@
+:root {
+  --ink: #23408e;
+  --ink-soft: #e8ecf7;
+  --slate: #1b2430;
+  --muted: #5b6577;
+  --line: #d7dbe3;
+  --paper: #ffffff;
+  --page: #f6f7f9;
+  --slip: #f4d35e;
+  --slip-deep: #e0b92f;
+  --green: #1e7f4f;
+  --amber: #b7791f;
+  --red: #b42318;
+  --radius-s: 4px;
+  --radius-m: 8px;
+  font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
+  color: var(--slate);
+  background: var(--page);
+  font-size: 17px;
+  line-height: 1.5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --slate: #e7eaf0; --muted: #a3acbb; --line: #333c4b; --paper: #19202b; --page: #11161e; --ink: #8fa8ec; --ink-soft: #1f2a44;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+a { color: var(--ink); text-underline-offset: 3px; }
+:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 0.4rem; letter-spacing: -0.01em; }
+h2 { font-size: 1.2rem; margin: 2rem 0 0.6rem; }
+.lede { color: var(--muted); max-width: 62ch; margin: 0 0 1.5rem; }
+.shell { max-width: 1120px; margin: 0 auto; padding: 1.25rem 1.25rem 4rem; }
+.topbar { display: flex; gap: 1.5rem; align-items: center; padding: 0.9rem 1.25rem; border-bottom: 1px solid var(--line); background: var(--paper); }
+.topbar .brand { font-weight: 700; color: var(--slate); text-decoration: none; margin-right: auto; }
+.grid { width: 100%; border-collapse: collapse; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-m); overflow: hidden; }
+.grid th, .grid td { text-align: left; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.grid th { font-weight: 700; font-size: 0.85rem; color: var(--muted); background: var(--page); }
+.grid td.num, .grid th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.grid tr:last-child td { border-bottom: 0; }
+.panel { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 1rem 1.2rem; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.25rem; }
+@media (max-width: 820px) { .two { grid-template-columns: 1fr; } }
+.btn { font: inherit; font-weight: 700; border: 2px solid var(--ink); background: var(--ink); color: #fff; padding: 0.55rem 1rem; border-radius: var(--radius-s); cursor: pointer; }
+.btn.quiet { background: transparent; color: var(--ink); }
+.btn.danger { background: var(--red); border-color: var(--red); }
+.btn:disabled { opacity: 0.5; cursor: progress; }
+.field { display: grid; gap: 0.25rem; margin-bottom: 0.9rem; }
+.field input, .field select, .field textarea { font: inherit; padding: 0.55rem 0.7rem; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--paper); color: var(--slate); }
+.field small { color: var(--muted); }
+.msg { padding: 0.7rem 0.9rem; border-radius: var(--radius-s); margin: 0.8rem 0; }
+.msg.err { background: #fdeceb; color: var(--red); }
+.msg.ok { background: #e7f4ee; color: var(--green); }
+.flag { border-left: 4px solid var(--amber); padding: 0.35rem 0.7rem; margin: 0.35rem 0; background: var(--paper); }
+.flag.blocking { border-color: var(--red); }
+.conf { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.85rem; }
+.conf.low { color: var(--red); font-weight: 700; }
+.risk { display: inline-block; height: 8px; border-radius: 4px; background: var(--amber); vertical-align: middle; }
+
+/* Stage track: the life of a VAT period, one segment per stage. */
+.track { display: flex; gap: 3px; margin: 0.15rem 0; }
+.track span { flex: 1; height: 6px; background: var(--line); border-radius: 2px; min-width: 18px; }
+.track span.done { background: var(--ink); }
+.track-label { font-size: 0.85rem; color: var(--muted); }
+
+/* The VAT Pot as the yellow carbon duplicate from a receipt book: MRA's copy of the money. */
+.slip { position: relative; background: var(--slip); color: #1b2430; padding: 1.1rem 1.3rem 1.3rem; border-radius: 2px; max-width: 420px;
+  box-shadow: 0 1px 0 var(--slip-deep); font-variant-numeric: tabular-nums; }
+.slip::before { content: ''; position: absolute; left: 0; right: 0; top: -6px; height: 6px;
+  background: radial-gradient(circle at 6px 6px, transparent 4px, var(--slip) 4.5px) -6px 0 / 12px 6px repeat-x; }
+.slip .label { font-size: 0.9rem; }
+.slip .amount { font-size: 2.4rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; margin: 0.15rem 0 0.6rem; }
+.slip dl { display: grid; grid-template-columns: 1fr auto; gap: 0.15rem 1rem; margin: 0; font-size: 0.92rem; }
+.slip dd { margin: 0; text-align: right; }
+.slip .due { margin-top: 0.7rem; font-size: 0.9rem; border-top: 1px dashed rgba(27, 36, 48, 0.4); padding-top: 0.5rem; }
+.doc-img { width: 100%; border: 1px solid var(--line); border-radius: var(--radius-s); background: #fff; }

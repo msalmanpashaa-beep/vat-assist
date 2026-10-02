@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "VAT Assist",
+    "slug": "vat-assist",
+    "scheme": "vatassist",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": { "bundleIdentifier": "africa.nexgen.vatassist", "supportsTablet": false },
+    "android": { "package": "africa.nexgen.vatassist" },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-localization",
+      "expo-font",
+      ["expo-image-picker", {
+        "cameraPermission": "VAT Assist uses the camera to photograph your invoices and receipts.",
+        "photosPermission": "VAT Assist reads the invoices you choose from your photos."
+      }]
+    ]
+  }
+}

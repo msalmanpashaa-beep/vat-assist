@@ -1,0 +1,33 @@
+{
+  "name": "vat-assist",
+  "private": true,
+  "version": "0.1.0",
+  "description": "VAT Assist by Nex-Gen Africa \u2014 phone-first VAT records, accountant review and return builder for Mauritian small businesses.",
+  "packageManager": "npm@10.9.7",
+  "workspaces": [
+    "packages/shared",
+    "packages/api",
+    "apps/web",
+    "apps/mobile"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "dev:api": "npm run dev -w @vat-assist/api",
+    "dev:web": "npm run dev -w @vat-assist/web",
+    "dev:mobile": "npm run start -w @vat-assist/mobile",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "db:migrate": "npm run migrate -w @vat-assist/api",
+    "db:seed": "npm run seed -w @vat-assist/api",
+    "demo": "npm run demo -w @vat-assist/api"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.6",
+    "typescript": "~6.0.3"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}
