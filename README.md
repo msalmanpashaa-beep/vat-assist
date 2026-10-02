@@ -8,7 +8,7 @@ The owner photographs bills, records the day's takings and sends customers a pay
 
 | Part | Path | Stack | Status |
 |---|---|---|---|
-| API | `packages/api` | NestJS 12, Postgres 16 with row-level security, plain SQL | Builds; 56 unit tests; 21 end-to-end tests (2 of them over real SMTP) and the 18-step demo pass against a real database |
+| API | `packages/api` | NestJS 12, Postgres 16 with row-level security, plain SQL | Builds; 55 unit tests; 21 end-to-end tests (2 of them over real SMTP) and the 18-step demo pass against a real database |
 | Shared | `packages/shared` | TypeScript: money, VAT, MRA calendar, i18n (en/fr/Kreol), contracts, form builders | Builds; 25 unit tests |
 | Web console | `apps/web` | Next.js 16 (App Router): reviewer, owner, admin, public pay page | Production build passes; 15 screen tests |
 | Phone app | `apps/mobile` | Expo SDK 57, Expo Router | Type-checks; 12 screen tests (Jest); Android bundle builds; not yet run on a device |
