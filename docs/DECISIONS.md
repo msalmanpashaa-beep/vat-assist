@@ -51,7 +51,9 @@ Items marked **Decide** need Nex-Gen's call. **Verify** means the code makes an 
 
 ## Owner and admin screens
 
-19. **Decide: which email service sends staff invites.** Microsoft 365 (Graph), Postmark and Resend are all implemented behind one interface; `MAIL_PROVIDER` picks one. Choose the production service and complete its setup in `DEVELOPMENT.md`. For Microsoft 365, scope the app to the sender mailbox with Exchange RBAC for Applications, never a tenant-wide `Mail.Send` grant.
+19. **Recommended: staff invites go out from Nex-Gen's own cPanel-hosted mail over SMTP.** Use a dedicated `invites@nex-gen.africa` mailbox, with replies to `connect@nex-gen.africa`.
+    - Still to do: create the mailbox; confirm SPF and DKIM in Email Deliverability; add DMARC; set `SMTP_*` in production; send a test email from the console; confirm the host's hourly sending limit.
+    - Postmark, Resend and Microsoft 365 remain available behind the same interface if volume or deliverability ever requires it.
 20. **Policy: staff recovery.** Admin-issued temporary codes work once, within 24 hours, and need an authenticator that was set up. For a lost phone, use Reset 2FA instead. Both actions are recorded in the audit trail.
 21. **Decide: feature flag defaults.** All five flags default to on (`packages/shared/src/features.ts`). Switch a flag's default off to roll a screen out to pilot shops only.
 22. **Verify: customer consent for reminders.** Invoice reminders go only to customers with a mobile number and recorded consent. Confirm the consent wording with the Data Protection Act review.

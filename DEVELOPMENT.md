@@ -96,6 +96,7 @@ Invites are sent through one mail interface (`packages/api/src/modules/mail`). `
 | `MAIL_PROVIDER` | Sends through | Use when |
 |---|---|---|
 | `console` (default) | Nothing: printed in the API log | Development and tests |
+| `smtp` | Your own mailbox over SMTP, for example on cPanel hosting | **Nex-Gen today:** a dedicated `invites@nex-gen.africa` mailbox on the existing host. No new vendor or cost |
 | `m365` | Microsoft Graph, from a Nex-Gen mailbox | Nex-Gen's mail is on Microsoft 365. No new vendor, and invites appear in the mailbox's Sent Items |
 | `postmark` | Postmark | You want a dedicated transactional email service |
 | `resend` | Resend | You want the quickest setup |
@@ -112,6 +113,37 @@ How it behaves:
 - Emails print in the API log.
 - The last 50 are kept at `GET /dev/mail/outbox?to=<email>`. This is development only and returns 404 in production or with a real provider.
 - Addresses on the reserved `.invalid` domain (e.g. `someone@fail.invalid`) fail on purpose, so you can try the not-sent path.
+
+### Nex-Gen's cPanel mailbox (SMTP), recommended now
+
+Nex-Gen's mail (`connect@nex-gen.africa`) runs on the cPanel hosting, so invites can go out from the same host. Use a separate mailbox for the app, so the password of `connect@` never sits in a server's settings, and send replies to `connect@`.
+
+1. **Create the mailbox.** cPanel → Email Accounts → Create: `invites@nex-gen.africa`, with a long random password.
+2. **Find the server settings.** In Email Accounts, choose **Connect Devices** for the new mailbox. Under the secure SSL/TLS settings, note the outgoing server and its SMTP port (usually 465).
+3. **Check that mail from the domain is trusted.**
+   - cPanel → **Email Deliverability**: SPF and DKIM for `nex-gen.africa` should show as valid. If your DNS is managed in cPanel, it can install the suggested records; otherwise add them where your DNS is hosted.
+   - Add a DMARC record (TXT on `_dmarc.nex-gen.africa`), starting with `v=DMARC1; p=none; rua=mailto:connect@nex-gen.africa`. Tighten it to `quarantine` once the reports look clean.
+4. **Settings for the API:**
+
+```
+MAIL_PROVIDER=smtp
+SMTP_HOST=mail.nex-gen.africa
+SMTP_PORT=465
+SMTP_USER=invites@nex-gen.africa
+SMTP_PASS=<the mailbox password>
+MAIL_FROM=Nex-Gen Africa <invites@nex-gen.africa>
+MAIL_REPLY_TO=connect@nex-gen.africa
+```
+
+   - `SMTP_HOST` is the outgoing server Connect Devices shows. If the certificate does not match `mail.nex-gen.africa`, use the server name shown there. The error message says so.
+   - Port 587 also works; it upgrades to TLS before signing in. Port 25 is often blocked by cloud hosts, so don't use it.
+   - Send from the same mailbox you sign in with (`MAIL_FROM` and `SMTP_USER`). Many hosts reject or flag anything else, and the API warns at startup if they differ.
+   - The password is a secret: keep it in the production secret store, not in the code, and change it if it leaks.
+5. **Check it works.** Admin → Staff → **Send a test email to me**. The result shows at once; then check the inbox and the spam folder. Then invite yourself to see the real invite.
+
+**Limits:** hosting plans usually cap how many emails a mailbox may send per hour, so ask the host what yours is. Staff invites are a handful a month. If VAT Assist later emails customers in volume, move to Postmark or Resend on the same domain. Their DNS records sit alongside the cPanel mail without disturbing it.
+
+**Plaintext SMTP** (`SMTP_TLS=none`) is only accepted for a test server on `127.0.0.1`/`localhost`, outside production. Everything else uses TLS (TLS 1.2 or newer).
 
 ### Microsoft 365 (Graph)
 
@@ -182,6 +214,7 @@ MAIL_FROM=Nex-Gen Africa <invites@yourdomain>
 npm test                      # unit and screen tests: shared, api, web (Vitest + Testing Library), mobile (Jest + jest-expo)
 npm run typecheck             # every package
 npm run test:e2e              # end to end against a running API with the seed loaded (npm run dev:api first)
+npm run test:e2e:smtp         # the invite flow over real SMTP (see below)
 npm run demo                  # the original 18-step self-checking story
 ```
 
@@ -195,9 +228,25 @@ The end-to-end suite (`packages/api/test/e2e/owner-admin.e2e.ts`) creates its ow
 
 `packages/api/test/e2e/staff-invite-email.e2e.ts` covers the invite email: admin creates the invite, the email is sent, the invitee follows the emailed link and sets a password and an authenticator, and their memberships exist. It also covers the not-sent fallback. Provider unit tests (`packages/api/test/mail.test.ts`) check Postmark, Resend and Graph requests, errors, token reuse and retries, including a real HTTP round trip to a stand-in server.
 
+**The invite flow over real SMTP.** The suite starts a test mail server that checks the sign-in and keeps what it receives. The API is pointed at it exactly as it would be at the cPanel host:
+
+```
+# terminal 1
+MAIL_PROVIDER=smtp SMTP_HOST=127.0.0.1 SMTP_PORT=2525 SMTP_TLS=none SMTP_USER=invites@nex-gen.africa SMTP_PASS=e2e-smtp-pass \
+  MAIL_FROM="Nex-Gen Africa <invites@nex-gen.africa>" MAIL_REPLY_TO=connect@nex-gen.africa npm run dev:api
+# terminal 2
+E2E_SMTP_SINK_PORT=2525 E2E_SMTP_USER=invites@nex-gen.africa E2E_SMTP_PASS=e2e-smtp-pass E2E_SMTP_REPLY_TO=connect@nex-gen.africa npm run test:e2e:smtp
+```
+
+The suite checks:
+- the admin test email arrives through the mailbox sign-in;
+- the invite is delivered;
+- the invitee follows the link from the delivered email, sets a password and an authenticator;
+- the Nex-Gen membership and the linked client membership exist.
+
 Screen tests drive the same form builders the screens use (`packages/shared/src/forms.ts`), so web, phone and e2e agree on the request shapes.
 
 ## Notes
 
-- `apps/mobile` testing packages were installed with `--legacy-peer-deps`. React Native Testing Library 13 and React Native 0.86 declare overlapping React peer ranges. Use `npm ci` with the committed lockfile.
+- The repository's `.npmrc` sets `legacy-peer-deps=true`, because React Native Testing Library 13 and React Native 0.86 declare overlapping React peer ranges. Peer dependencies the tools need (such as Vite for Vitest) are therefore listed explicitly. Use `npm ci` with the committed lockfile.
 - A fresh database: `npm run db:migrate` on an empty database. Migrations are checksummed, so never edit an applied one; add the next number instead.

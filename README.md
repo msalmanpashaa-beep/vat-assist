@@ -8,9 +8,9 @@ The owner photographs bills, records the day's takings and sends customers a pay
 
 | Part | Path | Stack | Status |
 |---|---|---|---|
-| API | `packages/api` | NestJS 12, Postgres 16 with row-level security, plain SQL | Builds; 50 unit tests; 19 end-to-end tests and the 18-step demo pass against a real database |
+| API | `packages/api` | NestJS 12, Postgres 16 with row-level security, plain SQL | Builds; 56 unit tests; 21 end-to-end tests (2 of them over real SMTP) and the 18-step demo pass against a real database |
 | Shared | `packages/shared` | TypeScript: money, VAT, MRA calendar, i18n (en/fr/Kreol), contracts, form builders | Builds; 25 unit tests |
-| Web console | `apps/web` | Next.js 16 (App Router): reviewer, owner, admin, public pay page | Production build passes; 14 screen tests |
+| Web console | `apps/web` | Next.js 16 (App Router): reviewer, owner, admin, public pay page | Production build passes; 15 screen tests |
 | Phone app | `apps/mobile` | Expo SDK 57, Expo Router | Type-checks; 12 screen tests (Jest); Android bundle builds; not yet run on a device |
 
 `docs/demo/` holds the transcript of the last end-to-end run and the filing-pack PDF it produced.
@@ -35,7 +35,7 @@ npm run dev:web          # http://localhost:3000  (reviewer console, owner view,
 npm run dev:mobile       # Expo; set EXPO_PUBLIC_API_URL=http://<your-LAN-IP>:4000 for a phone on Wi-Fi
 ```
 
-In development nothing leaves the machine. Staff invite emails print in the API log; production sends them through Postmark, Resend or Microsoft 365 (`MAIL_PROVIDER`, see `DEVELOPMENT.md`). SMS codes are fixed at `000000`, messages print to the API log, and invoices are read by a deterministic stand-in. Card payments are simulated, but the real signature and decryption code paths run.
+In development nothing leaves the machine. Staff invite emails print in the API log; production sends them from Nex-Gen's own cPanel mailbox over SMTP, or through Postmark, Resend or Microsoft 365 (`MAIL_PROVIDER`, see `DEVELOPMENT.md`). SMS codes are fixed at `000000`, messages print to the API log, and invoices are read by a deterministic stand-in. Card payments are simulated, but the real signature and decryption code paths run.
 
 ## The demo
 
