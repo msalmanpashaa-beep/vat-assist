@@ -83,10 +83,98 @@ PUT /admin/orgs/<orgId>/features
 
 - **Invite:**
   - **Admin → Staff → Invite** takes an email, a role, and optionally the clients to link straight away.
-  - It returns a one-time link valid for 7 days. No email provider is set up yet, so the admin sends the link.
+  - It emails a one-time link, valid for 7 days, through the configured provider (see **Email for staff invites** below).
+  - The console shows the link only if the email could not be sent, so the admin can pass it on another way.
   - The person then sets a password and an authenticator.
 - **Reset 2FA:** removes the authenticator and ends all sessions; the person enrols again at next sign-in.
 - **Temporary recovery code:** works once, within 24 hours, for someone whose authenticator is set up but unavailable. Issuing a new code retires the previous one.
+
+## Email for staff invites
+
+Invites are sent through one mail interface (`packages/api/src/modules/mail`). `MAIL_PROVIDER` chooses the service:
+
+| `MAIL_PROVIDER` | Sends through | Use when |
+|---|---|---|
+| `console` (default) | Nothing: printed in the API log | Development and tests |
+| `m365` | Microsoft Graph, from a Nex-Gen mailbox | Nex-Gen's mail is on Microsoft 365. No new vendor, and invites appear in the mailbox's Sent Items |
+| `postmark` | Postmark | You want a dedicated transactional email service |
+| `resend` | Resend | You want the quickest setup |
+
+How it behaves:
+
+- **Sent:** the admin console says the invite was emailed and does not show the link.
+- **Not sent:** the console shows the reason and the link, so the admin can pass it on another way.
+- **Logged:** every attempt is recorded in `email_messages` (never the body, which carries the link) and shown in the staff list.
+- **Production:** the API refuses to start with the console provider, with a placeholder sender, or without the chosen provider's settings. The error names what is missing.
+
+### Development
+
+- Emails print in the API log.
+- The last 50 are kept at `GET /dev/mail/outbox?to=<email>`. This is development only and returns 404 in production or with a real provider.
+- Addresses on the reserved `.invalid` domain (e.g. `someone@fail.invalid`) fail on purpose, so you can try the not-sent path.
+
+### Microsoft 365 (Graph)
+
+1. **Sender mailbox:** create one, for example a shared mailbox `invites@yourdomain`.
+2. **Entra app:** Entra ID → App registrations → New registration ("VAT Assist mail").
+   - Note the Application (client) ID and the Directory (tenant) ID.
+   - Certificates & secrets → New client secret. Note the value and its expiry date, and rotate it before then.
+3. **Mailbox permission:** do not grant Microsoft Graph's `Mail.Send` application permission in Entra. Granted there, it lets the app send as any mailbox in the tenant, and it overrides mailbox scoping. Scope the app to the one mailbox in Exchange instead, with RBAC for Applications (Microsoft's replacement for application access policies):
+
+```powershell
+Connect-ExchangeOnline
+# ObjectId is the Enterprise application's object ID (Entra → Enterprise applications), not the app registration's.
+New-ServicePrincipal -AppId <client-id> -ObjectId <enterprise-app-object-id> -DisplayName "VAT Assist mail"
+New-ManagementScope -Name "VAT Assist sender" -RecipientRestrictionFilter "PrimarySmtpAddress -eq 'invites@yourdomain'"
+New-ManagementRoleAssignment -App <client-id> -Role "Application Mail.Send" -CustomResourceScope "VAT Assist sender"
+Test-ServicePrincipalAuthorization -Identity <client-id> -Resource invites@yourdomain
+```
+
+   Allow some time for the assignment to take effect.
+4. **Settings:**
+
+```
+MAIL_PROVIDER=m365
+M365_TENANT_ID=<directory-tenant-id>
+M365_CLIENT_ID=<application-client-id>
+M365_CLIENT_SECRET=<client-secret-value>
+M365_SENDER=invites@yourdomain
+```
+
+   `MAIL_FROM` is not used here, because Graph sends as the mailbox.
+5. **Check:** invite yourself from Admin → Staff. The message appears in the mailbox's Sent Items. A `403` in the staff list means the Exchange role assignment is missing or not active yet.
+
+### Postmark
+
+1. Create a Server and use its default transactional stream, `outbound`.
+2. Verify the sender: add your domain's DNS records under Sender Signatures, or confirm the single address used in `MAIL_FROM`.
+3. On the server's API Tokens tab, copy the Server API token.
+4. Settings:
+
+```
+MAIL_PROVIDER=postmark
+POSTMARK_SERVER_TOKEN=<server-api-token>
+MAIL_FROM=Nex-Gen Africa <invites@yourdomain>
+POSTMARK_MESSAGE_STREAM=outbound
+```
+
+5. **Dry run:** `POSTMARK_SERVER_TOKEN=POSTMARK_API_TEST` makes Postmark accept the request without delivering anything.
+6. **New accounts:** a new Postmark account may be restricted until Postmark approves it, so send your first test invites to your own domain.
+
+### Resend
+
+1. Domains → add your domain, add the DNS records it shows, and verify it.
+2. API Keys → create a key with sending access.
+3. Settings:
+
+```
+MAIL_PROVIDER=resend
+RESEND_API_KEY=re_...
+MAIL_FROM=Nex-Gen Africa <invites@yourdomain>
+```
+
+4. **Before the domain is verified,** Resend's test addresses work: send from `onboarding@resend.dev` to `delivered@resend.dev`.
+5. **Duplicates:** each invite carries an `Idempotency-Key`, so a retried request does not email twice. Resend keeps keys for 24 hours.
 
 ## Tests
 
@@ -104,6 +192,8 @@ The end-to-end suite (`packages/api/test/e2e/owner-admin.e2e.ts`) creates its ow
 - the reviewer query flow;
 - the reminder and WhatsApp toggles;
 - invites, assignments, 2FA reset with a temporary code, disabling staff, and feature flags.
+
+`packages/api/test/e2e/staff-invite-email.e2e.ts` covers the invite email: admin creates the invite, the email is sent, the invitee follows the emailed link and sets a password and an authenticator, and their memberships exist. It also covers the not-sent fallback. Provider unit tests (`packages/api/test/mail.test.ts`) check Postmark, Resend and Graph requests, errors, token reuse and retries, including a real HTTP round trip to a stand-in server.
 
 Screen tests drive the same form builders the screens use (`packages/shared/src/forms.ts`), so web, phone and e2e agree on the request shapes.
 
