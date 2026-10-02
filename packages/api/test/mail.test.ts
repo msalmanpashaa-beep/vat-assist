@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
-import { AppConfig } from '../src/config';
+import { AppConfig, type Env } from '../src/config';
 import { ConsoleMail, createMailProvider, formatAddress, M365Mail, MailError, PostmarkMail, ResendMail } from '../src/modules/mail/mail';
 import { staffInviteEmail } from '../src/modules/mail/templates';
 
@@ -24,6 +24,15 @@ function fakeFetch(...replies: Response[]) {
   return { impl: impl as unknown as typeof fetch, calls };
 }
 const json = (s: string) => JSON.parse(s) as Record<string, any>;
+/** The MailError a send rejects with (fails the test if the send succeeds). */
+async function failure(p: Promise<unknown>): Promise<MailError> {
+  try {
+    await p;
+  } catch (e) {
+    return e as MailError;
+  }
+  throw new Error('expected the send to fail');
+}
 
 describe('Postmark', () => {
   const opts = { token: 'server-token', from: 'Nex-Gen Africa <invites@nexgen.example>', replyTo: 'help@nexgen.example', stream: 'outbound', apiUrl: 'https://api.postmarkapp.com' };
@@ -42,17 +51,17 @@ describe('Postmark', () => {
 
   it('a rejected message (422 with an ErrorCode) is a permanent failure', async () => {
     const f = fakeFetch(reply(422, { ErrorCode: 400, Message: 'Sender signature not defined' }));
-    const err = await new PostmarkMail(opts, f.impl).send(message).catch((e: unknown) => e as MailError);
+    const err = await failure(new PostmarkMail(opts, f.impl).send(message));
     expect(err).toBeInstanceOf(MailError);
     expect(err).toMatchObject({ provider: 'postmark', retryable: false, status: 422 });
     expect(err.message).toContain('Sender signature not defined (ErrorCode 400)');
   });
 
   it('an outage or a network failure is retryable', async () => {
-    const down = await new PostmarkMail(opts, fakeFetch(reply(503, 'unavailable')).impl).send(message).catch((e: unknown) => e as MailError);
+    const down = await failure(new PostmarkMail(opts, fakeFetch(reply(503, 'unavailable')).impl).send(message));
     expect(down).toMatchObject({ retryable: true, status: 503 });
     const offline = vi.fn(async () => { throw new TypeError('fetch failed'); }) as unknown as typeof fetch;
-    const net = await new PostmarkMail(opts, offline).send(message).catch((e: unknown) => e as MailError);
+    const net = await failure(new PostmarkMail(opts, offline).send(message));
     expect(net).toMatchObject({ provider: 'postmark', retryable: true });
   });
 });
@@ -74,9 +83,9 @@ describe('Resend', () => {
   });
 
   it('rate limiting is retryable; a validation error is not', async () => {
-    const limited = await new ResendMail(opts, fakeFetch(reply(429, { message: 'Too many requests' })).impl).send(message).catch((e: unknown) => e as MailError);
+    const limited = await failure(new ResendMail(opts, fakeFetch(reply(429, { message: 'Too many requests' })).impl).send(message));
     expect(limited).toMatchObject({ retryable: true, status: 429 });
-    const invalid = await new ResendMail(opts, fakeFetch(reply(422, { message: 'The domain is not verified' })).impl).send(message).catch((e: unknown) => e as MailError);
+    const invalid = await failure(new ResendMail(opts, fakeFetch(reply(422, { message: 'The domain is not verified' })).impl).send(message));
     expect(invalid).toMatchObject({ retryable: false, status: 422 });
     expect(invalid.message).toBe('resend: The domain is not verified');
   });
@@ -126,14 +135,14 @@ describe('Microsoft 365 (Graph)', () => {
 
   it('403 explains the mailbox permission and is not retried', async () => {
     const f = fakeFetch(token('tok'), reply(403, { error: { code: 'ErrorAccessDenied', message: 'Access is denied' } }));
-    const err = await new M365Mail(opts, f.impl).send(message).catch((e: unknown) => e as MailError);
+    const err = await failure(new M365Mail(opts, f.impl).send(message));
     expect(err).toMatchObject({ provider: 'm365', retryable: false, status: 403 });
     expect(err.message).toContain('Application Mail.Send');
   });
 
   it('a bad client secret fails at the token step with Microsoft\'s reason', async () => {
     const f = fakeFetch(reply(401, { error: 'invalid_client', error_description: 'AADSTS7000215: Invalid client secret provided.' }));
-    const err = await new M365Mail(opts, f.impl).send(message).catch((e: unknown) => e as MailError);
+    const err = await failure(new M365Mail(opts, f.impl).send(message));
     expect(err.message).toContain('AADSTS7000215');
     expect(f.calls).toHaveLength(1);
   });
@@ -154,7 +163,7 @@ describe('choosing the provider', () => {
   });
 
   it('production refuses the console provider and placeholder senders', () => {
-    const prod = { NODE_ENV: 'production', MAIL_PROVIDER: 'postmark', MAIL_FROM: 'VAT Assist <invites@example.com>' } as never;
+    const prod: Partial<Env> = { NODE_ENV: 'production', MAIL_PROVIDER: 'postmark', MAIL_FROM: 'VAT Assist <invites@example.com>' };
     const problems = AppConfig.productionProblems({ ...cfg({}).env, ...prod });
     expect(problems).toContain('MAIL_FROM must be a real, verified sender address');
     expect(AppConfig.productionProblems({ ...cfg({}).env, NODE_ENV: 'production' })).toContain('MAIL_PROVIDER must be postmark, resend or m365');
