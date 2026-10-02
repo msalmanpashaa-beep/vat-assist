@@ -7,3 +7,6 @@ export * from './i18n';
 export * from './templates';
 export * from './contracts';
 export * from './types';
+export * from './features';
+export * from './consent';
+export * from './forms';

@@ -92,6 +92,10 @@ export const DailyTakingsBody = z.object({
 export const SalesInvoiceBody = z.object({
   customerId: uuid.optional(),
   customerName: z.string().min(1).max(200).optional(),
+  /** E.164, e.g. +23057123456. Needed for invoice reminders. */
+  customerPhone: z.string().regex(/^\+[1-9]\d{6,14}$/, 'Mobile in full international form, e.g. +23057123456').optional(),
+  /** The customer agreed to SMS reminders about this business's invoices. */
+  customerReminderConsent: z.boolean().optional(),
   issueDate: isoDate,
   deliveryDate: isoDate.optional(),
   settlement: SettlementSchema,
@@ -198,3 +202,44 @@ export type PaymentSettingsInput = z.input<typeof PaymentSettingsBody>;
 export type PayNotifyInput = z.input<typeof PayNotifyBody>;
 export type QueryCreateInput = z.input<typeof QueryCreateBody>;
 export type ReviewerApproveInput = z.input<typeof ReviewerApproveBody>;
+
+// ---------- owner settings and contacts ----------
+export const ContactBody = z.object({
+  name: z.string().min(1).max(200),
+  kind: z.enum(['customer', 'supplier']),
+  phone: z.string().regex(/^\+[1-9]\d{6,14}$/).optional(),
+  reminderConsent: z.boolean().optional(),
+  paymentTermsDays: z.number().int().min(0).max(365).optional(),
+});
+export const ContactPatchBody = z.object({
+  phone: z.string().regex(/^\+[1-9]\d{6,14}$/).nullable().optional(),
+  reminderConsent: z.boolean().optional(),
+  paymentTermsDays: z.number().int().min(0).max(365).nullable().optional(),
+});
+export const OrgSettingsBody = z.object({
+  debtorRemindersEnabled: z.boolean().optional(),
+  defaultLocale: LocaleSchema.optional(),
+});
+export const WhatsAppConsentBody = z.object({ optIn: z.boolean(), consentVersion: z.string().min(1).max(40) });
+
+// ---------- admin ----------
+const staffRole = z.enum(['reviewer', 'senior_reviewer', 'admin', 'support']);
+export const StaffInviteBody = z.object({
+  email: z.string().email().max(200),
+  fullName: z.string().min(2).max(120),
+  role: staffRole,
+  /** Clients to link the new person to straight away, in the same role. */
+  orgIds: z.array(uuid).max(500).default([]),
+});
+export const AcceptInviteBody = z.object({ token: z.string().min(20).max(100), password: z.string().min(12, 'Use at least 12 characters').max(200) });
+export const AssignStaffBody = z.object({ userId: uuid, role: staffRole });
+export const BulkReassignBody = z.object({ orgIds: z.array(uuid).min(1).max(500), toUserId: uuid, role: staffRole, fromUserId: uuid.optional() });
+export const FeatureFlagsBody = z.object({
+  features: z.object({
+    opening_balances: z.boolean().optional(),
+    credit_invoices: z.boolean().optional(),
+    record_payments: z.boolean().optional(),
+    invoice_reminders: z.boolean().optional(),
+    whatsapp_opt_in: z.boolean().optional(),
+  }),
+});
