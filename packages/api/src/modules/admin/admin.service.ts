@@ -8,7 +8,7 @@ import { forbidden, notFound } from '../../common/errors';
 import { Db } from '../../db/db.service';
 import { AuditService } from '../core/audit.service';
 import { MAIL_PROVIDER, MailError, type MailProvider } from '../mail/mail';
-import { staffInviteEmail } from '../mail/templates';
+import { staffInviteEmail, testEmail } from '../mail/templates';
 import { RemindersService } from '../notifications/reminders.service';
 
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
@@ -126,6 +126,32 @@ export class AdminService {
       email: { status: delivery.status, provider: delivery.provider, error: delivery.error },
       inviteUrl: delivery.status === 'failed' ? inviteUrl : null,
     };
+  }
+
+  /** Sends a test email (to the admin by default) through the configured provider, to prove the set-up works. */
+  async testEmail(a: Actor, to?: string) {
+    await this.requireAdmin(a);
+    const me = await this.db.run(userCtx(a), (tx) => tx.one<{ email: string | null }>(`select email::text as email from users where id = $1`, [a.userId]));
+    const recipient = to ?? me.email;
+    if (!recipient) throw notFound('An email address for you');
+    const content = testEmail({ provider: this.mail.name, sentAt: new Date() });
+    let delivery: { status: 'sent' | 'failed'; provider: string; messageId: string | null; error: string | null };
+    try {
+      const sent = await this.mail.send({ to: recipient, ...content, tag: 'test' });
+      delivery = { status: 'sent', provider: sent.provider, messageId: sent.id, error: null };
+    } catch (e) {
+      const err = e instanceof MailError ? e : new MailError(e instanceof Error ? e.message : String(e), this.mail.name, true);
+      delivery = { status: 'failed', provider: err.provider, messageId: null, error: err.message.slice(0, 500) };
+    }
+    await this.db.run(userCtx(a), (tx) =>
+      tx.exec(
+        `insert into email_messages (kind, to_email, subject, provider, provider_message_id, status, error, related_user_id, created_by)
+         values ('test', $1, $2, $3, $4, $5, $6, $7, $7)`,
+        [recipient, content.subject, delivery.provider, delivery.messageId, delivery.status, delivery.error, a.userId],
+      ),
+    );
+    await this.auditIn(await this.platformId(), 'mail.test_sent', 'user', a.userId, a, { to: recipient, status: delivery.status, provider: delivery.provider });
+    return { to: recipient, status: delivery.status, provider: delivery.provider, error: delivery.error };
   }
 
   async resendInvite(a: Actor, userId: string) {

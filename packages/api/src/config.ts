@@ -35,10 +35,17 @@ const EnvSchema = z.object({
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
   PAYMENTS_MODE: z.enum(['mock', 'live']).default('mock'),
   /** Staff invite emails. console prints them (development); postmark, resend or m365 send them. */
-  MAIL_PROVIDER: z.enum(['console', 'postmark', 'resend', 'm365']).default('console'),
+  MAIL_PROVIDER: z.enum(['console', 'smtp', 'postmark', 'resend', 'm365']).default('console'),
   /** Sender for Postmark and Resend (a verified domain or sender signature). Microsoft 365 sends as M365_SENDER. */
   MAIL_FROM: z.string().min(3).default('VAT Assist <no-reply@localhost>'),
   MAIL_REPLY_TO: optional,
+  /** A mailbox on your own mail server (e.g. cPanel hosting). Port 465 = TLS from the start; 587 = STARTTLS. */
+  SMTP_HOST: optional,
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(465),
+  /** Defaults to implicit on 465, otherwise starttls. none is for a local test server only (refused in production). */
+  SMTP_TLS: z.enum(['implicit', 'starttls', 'none']).optional(),
+  SMTP_USER: optional,
+  SMTP_PASS: optional,
   POSTMARK_SERVER_TOKEN: optional,
   POSTMARK_MESSAGE_STREAM: z.string().default('outbound'),
   POSTMARK_API_URL: z.string().url().default('https://api.postmarkapp.com'),
@@ -97,8 +104,9 @@ export class AppConfig {
     if (env.EXTRACTION_PROVIDER === 'mock') p.push('EXTRACTION_PROVIDER must not be mock');
     if (env.PAYMENTS_MODE === 'mock') p.push('PAYMENTS_MODE must be live');
     if (env.MESSAGING_PROVIDER === 'console') p.push('MESSAGING_PROVIDER must not be console');
-    if (env.MAIL_PROVIDER === 'console') p.push('MAIL_PROVIDER must be postmark, resend or m365');
-    if ((env.MAIL_PROVIDER === 'postmark' || env.MAIL_PROVIDER === 'resend') && /@(localhost|example\.com)\b/.test(env.MAIL_FROM)) {
+    if (env.MAIL_PROVIDER === 'console') p.push('MAIL_PROVIDER must be smtp, postmark, resend or m365');
+    if (env.MAIL_PROVIDER === 'smtp' && env.SMTP_TLS === 'none') p.push('SMTP_TLS=none is not allowed in production');
+    if (['smtp', 'postmark', 'resend'].includes(env.MAIL_PROVIDER) && /@(localhost|example\.com)\b/.test(env.MAIL_FROM)) {
       p.push('MAIL_FROM must be a real, verified sender address');
     }
     if (!env.PUBLIC_BASE_URL.startsWith('https://')) p.push('PUBLIC_BASE_URL must be https');

@@ -1,8 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { createTransport } from 'nodemailer';
 import type { AppConfig } from '../../config';
 
-export type MailProviderName = 'console' | 'postmark' | 'resend' | 'm365';
+export type MailProviderName = 'console' | 'postmark' | 'resend' | 'm365' | 'smtp';
 
 export interface OutboundEmail {
   to: string;
@@ -205,6 +206,86 @@ export class M365Mail implements MailProvider {
   }
 }
 
+/** The bare address in "Name <address>". */
+export function addressOf(from: string): string {
+  return (/<([^>]+)>/.exec(from)?.[1] ?? from).trim();
+}
+
+export interface SmtpOptions {
+  host: string;
+  port: number;
+  /** implicit: TLS from the first byte (port 465). starttls: upgrade before sign-in (587). none: local test servers only. */
+  tls: 'implicit' | 'starttls' | 'none';
+  user: string;
+  pass: string;
+  from: string;
+  replyTo?: string;
+}
+
+export function smtpTransportOptions(o: SmtpOptions) {
+  return {
+    host: o.host,
+    port: o.port,
+    secure: o.tls === 'implicit',
+    requireTLS: o.tls === 'starttls',
+    ignoreTLS: o.tls === 'none',
+    auth: { user: o.user, pass: o.pass },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
+    tls: { minVersion: 'TLSv1.2' as const },
+  };
+}
+
+interface SmtpInfo { messageId?: string; rejected?: unknown[]; response?: string }
+type SmtpTransport = { sendMail(message: Record<string, unknown>): Promise<SmtpInfo> };
+
+/**
+ * A mailbox on your own mail server, e.g. invites@nex-gen.africa on cPanel hosting: SMTP with sign-in, always
+ * over TLS (port 465 implicit or 587 STARTTLS). The host signs with DKIM if it is enabled for the domain.
+ */
+export class SmtpMail implements MailProvider {
+  readonly name = 'smtp' as const;
+  private readonly transport: SmtpTransport;
+
+  constructor(private readonly o: SmtpOptions, transport?: SmtpTransport) {
+    this.transport = transport ?? (createTransport(smtpTransportOptions(o)) as unknown as SmtpTransport);
+  }
+
+  async send(m: OutboundEmail): Promise<SentEmail> {
+    let info: SmtpInfo;
+    try {
+      info = await this.transport.sendMail({
+        from: this.o.from,
+        to: m.toName ? { name: m.toName.replace(/[\r\n]/g, ' '), address: m.to } : m.to,
+        subject: m.subject,
+        text: m.text,
+        html: m.html,
+        ...(this.o.replyTo ? { replyTo: this.o.replyTo } : {}),
+        ...(m.tag ? { headers: { 'X-VAT-Assist-Kind': m.tag } } : {}),
+      });
+    } catch (e) {
+      throw smtpError(e, this.o.host);
+    }
+    if (info.rejected?.length) throw new MailError(`smtp: the server refused ${m.to} (${info.response ?? 'no reason given'})`, 'smtp', false);
+    return { provider: 'smtp', id: info.messageId ?? null };
+  }
+}
+
+/** SMTP failures, classed: 4xx and network trouble are worth retrying; sign-in, certificate and 5xx are not. */
+export function smtpError(e: unknown, host: string): MailError {
+  const err = (e ?? {}) as { code?: string; responseCode?: number; response?: string; message?: string };
+  const detail = String(err.response ?? err.message ?? e).slice(0, 300);
+  if (err.code === 'EAUTH') {
+    return new MailError(`smtp: the mail server refused the sign-in (${detail}). Use the mailbox's full address as SMTP_USER and its password as SMTP_PASS.`, 'smtp', false, err.responseCode);
+  }
+  if (/certificate|altnames|self[- ]signed/i.test(detail)) {
+    return new MailError(`smtp: the server's certificate is not valid for ${host} (${detail}). Use the outgoing server name shown in cPanel, Email Accounts, Connect Devices.`, 'smtp', false);
+  }
+  if (typeof err.responseCode === 'number') return new MailError(`smtp: ${detail}`, 'smtp', err.responseCode < 500, err.responseCode);
+  return new MailError(`smtp: could not reach the mail server ${host} (${detail})`, 'smtp', true);
+}
+
 /** Picks the provider from MAIL_PROVIDER and refuses to start if its settings are missing. */
 export function createMailProvider(cfg: AppConfig, fetchImpl: Fetch = fetch): MailProvider {
   const e = cfg.env;
@@ -228,6 +309,17 @@ export function createMailProvider(cfg: AppConfig, fetchImpl: Fetch = fetch): Ma
         tenantId: v.M365_TENANT_ID, clientId: v.M365_CLIENT_ID, clientSecret: v.M365_CLIENT_SECRET, sender: v.M365_SENDER,
         replyTo: e.MAIL_REPLY_TO, loginUrl: e.M365_LOGIN_URL, graphUrl: e.M365_GRAPH_URL,
       }, fetchImpl);
+    }
+    case 'smtp': {
+      const v = need({ SMTP_HOST: e.SMTP_HOST, SMTP_USER: e.SMTP_USER, SMTP_PASS: e.SMTP_PASS });
+      const tls = e.SMTP_TLS ?? (e.SMTP_PORT === 465 ? 'implicit' : 'starttls');
+      if (tls === 'none' && (cfg.isProduction || !/^(127\.0\.0\.1|localhost|::1)$/i.test(v.SMTP_HOST))) {
+        throw new Error('SMTP_TLS=none is only allowed for a local test server, outside production');
+      }
+      if (addressOf(e.MAIL_FROM).toLowerCase() !== v.SMTP_USER.toLowerCase()) {
+        new Logger('Mail').warn(`MAIL_FROM (${e.MAIL_FROM}) is not the mailbox you sign in with (${v.SMTP_USER}); many hosts reject or flag that. Send from the same mailbox.`);
+      }
+      return new SmtpMail({ host: v.SMTP_HOST, port: e.SMTP_PORT, tls, user: v.SMTP_USER, pass: v.SMTP_PASS, from: e.MAIL_FROM, replyTo: e.MAIL_REPLY_TO });
     }
     default:
       return new ConsoleMail();

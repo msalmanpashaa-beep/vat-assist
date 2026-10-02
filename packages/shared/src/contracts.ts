@@ -231,6 +231,8 @@ export const StaffInviteBody = z.object({
   /** Clients to link the new person to straight away, in the same role. */
   orgIds: z.array(uuid).max(500).default([]),
 });
+/** Admin email check: defaults to the admin's own address. */
+export const TestEmailBody = z.object({ to: z.string().email().max(200).optional() });
 export const AcceptInviteBody = z.object({ token: z.string().min(20).max(100), password: z.string().min(12, 'Use at least 12 characters').max(200) });
 export const AssignStaffBody = z.object({ userId: uuid, role: staffRole });
 export const BulkReassignBody = z.object({ orgIds: z.array(uuid).min(1).max(500), toUserId: uuid, role: staffRole, fromUserId: uuid.optional() });

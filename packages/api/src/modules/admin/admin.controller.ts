@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
-import { AssignStaffBody, BulkReassignBody, FeatureFlagsBody, StaffInviteBody } from '@vat-assist/shared';
+import { AssignStaffBody, BulkReassignBody, FeatureFlagsBody, StaffInviteBody, TestEmailBody } from '@vat-assist/shared';
 import { z } from 'zod';
 import { type Actor, CurrentActor, userCtx } from '../../common/auth-context';
 import { DomainError } from '../../common/errors';
@@ -28,6 +28,13 @@ export class AdminController {
   @Post('staff')
   invite(@CurrentActor() a: Actor, @Body(new ZodBody(StaffInviteBody)) b: z.output<typeof StaffInviteBody>) {
     return this.admin.invite(a, b.email, b.fullName, b.role, b.orgIds);
+  }
+
+  /** Sends a test email through the configured provider (to yourself unless another address is given). */
+  @Post('mail/test')
+  @HttpCode(200)
+  testEmail(@CurrentActor() a: Actor, @Body(new ZodBody(TestEmailBody)) b: z.output<typeof TestEmailBody>) {
+    return this.admin.testEmail(a, b.to);
   }
 
   /** A new one-time link: for an invite that expired, or to let someone set a new password. */

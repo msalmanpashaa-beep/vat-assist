@@ -46,3 +46,20 @@ export function staffInviteEmail(d: StaffInviteEmailData): { subject: string; ht
 </body></html>`;
   return { subject, html, text };
 }
+
+const PROVIDER_LABEL: Record<string, string> = {
+  console: 'the development console', smtp: 'your mail server (SMTP)', postmark: 'Postmark', resend: 'Resend', m365: 'Microsoft 365',
+};
+
+/** What an admin sends to check the email set-up before inviting anyone. */
+export function testEmail(d: { provider: string; sentAt: Date }): { subject: string; html: string; text: string } {
+  const when = d.sentAt.toLocaleString('en-GB', { timeZone: 'Indian/Mauritius', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const via = PROVIDER_LABEL[d.provider] ?? d.provider;
+  const subject = 'VAT Assist test email';
+  const text = `This is a test from VAT Assist, sent through ${via} on ${when} (Mauritius time).\n\nIf it reached your inbox, not spam, staff invites will reach people too.\n\nVAT Assist by Nex-Gen Africa`;
+  const html = `<!doctype html><html><body style="margin:0;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#1b2430">
+<p style="font-size:16px;line-height:1.5">This is a test from <strong>VAT Assist</strong>, sent through ${esc(via)} on ${esc(when)} (Mauritius time).</p>
+<p style="font-size:16px;line-height:1.5">If it reached your inbox, not spam, staff invites will reach people too.</p>
+<p style="font-size:12px;color:#5b6577">VAT Assist by Nex-Gen Africa</p></body></html>`;
+  return { subject, html, text };
+}
