@@ -19,10 +19,16 @@ interface Recipient {
   smsOptOut: boolean;
 }
 
+/** WhatsApp only with a recorded opt-in AND an approved template; otherwise SMS, unless the number said STOP. */
+export function chooseChannel(r: { whatsappOptIn: boolean; hasTemplate: boolean; smsOptOut: boolean }): 'whatsapp' | 'sms' | 'skip' {
+  if (r.whatsappOptIn && r.hasTemplate) return 'whatsapp';
+  return r.smsOptOut ? 'skip' : 'sms';
+}
+
 /**
  * Reminders the day before: VAT return deadlines (to owners), Nex-Gen bookings (to whoever booked) and,
- * if the shop switches it on, customer invoices falling due (to the customer). Each message is queued once
- * (idempotency key), sent at 09:00 Mauritius time, and its delivery status comes back from Twilio.
+ * when the shop switches them on, customer invoices falling due (to customers who agreed). Each message is
+ * queued once (idempotency key) for 09:00 Mauritius time; consent and the amount due are re-checked at send time.
  */
 @Injectable()
 export class RemindersService implements OnModuleInit {
@@ -41,6 +47,10 @@ export class RemindersService implements OnModuleInit {
     this.jobs.register('reminders.tick', async () => {
       await this.tick(new Date());
     });
+    // A new credit invoice: schedule its reminder now (no-op unless the shop has reminders on).
+    this.jobs.register('reminders.invoice_created', async (d) => {
+      await this.scheduleInvoiceReminders(String(d.orgId), String(d.transactionId));
+    });
   }
 
   /** 09:00 (or REMINDER_SEND_HOUR_LOCAL) Mauritius time on `day`, as a UTC instant. */
@@ -53,6 +63,17 @@ export class RemindersService implements OnModuleInit {
     const queued = await this.plan(now);
     const { sent, failed } = await this.dispatch(now);
     return { queued, sent, failed };
+  }
+
+  /** Shop setting on AND the Nex-Gen feature flag not switched off. */
+  private async invoiceRemindersOn(tx: Tx, orgId: string): Promise<boolean> {
+    const r = await tx.one<{ on: boolean }>(
+      `select o.debtor_reminders_enabled
+              and coalesce((select f.enabled from org_features f where f.org_id = o.id and f.feature = 'invoice_reminders'), true) as on
+       from organisations o where o.id = $1`,
+      [orgId],
+    );
+    return r.on;
   }
 
   async plan(now: Date): Promise<number> {
@@ -72,10 +93,7 @@ export class RemindersService implements OnModuleInit {
         let n = 0;
         for (const r of await this.owners(tx, c.org_id)) {
           n += await this.queue(tx, c.org_id, `vat:${c.period_id}:${c.deadline_kind}:${r.userId}:${tomorrow}`, r, 'vat_due_tomorrow', {
-            business: org.name,
-            period: periodLabel(period),
-            date: ddmmyyyy(tomorrow),
-            amount: formatRs(pot.setAsideCents, r.locale),
+            business: org.name, period: periodLabel(period), date: ddmmyyyy(tomorrow), amount: formatRs(pot.setAsideCents, r.locale),
           }, sendAt);
         }
         return n;
@@ -105,24 +123,56 @@ export class RemindersService implements OnModuleInit {
     const invoices = await this.db.run({ kind: 'system', orgId: null }, (tx) =>
       tx.many<{ org_id: string; transaction_id: string }>(`select * from app.reminder_invoice_candidates($1::date)`, [tomorrow]),
     );
-    for (const i of invoices) {
-      queued += await this.db.run({ kind: 'system', orgId: i.org_id }, async (tx) => {
-        const row = await tx.one<{ business: string; locale: Locale; reference: string | null; phone_e164: string; outstanding_cents: number }>(
-          `select coalesce(o.trading_name, o.legal_name) as business, o.default_locale as locale, t.reference, c.phone_e164, v.outstanding_cents
-           from transactions t join organisations o on o.id = t.org_id join contacts c on c.id = t.contact_id
-           join v_open_items v on v.transaction_id = t.id where t.id = $1`,
-          [i.transaction_id],
-        );
-        // Customers have not opted in to WhatsApp from the shop, so these go by SMS only.
-        return this.queue(tx, i.org_id, `invoice:${i.transaction_id}:${tomorrow}`, {
-          userId: null, phone: row.phone_e164, locale: row.locale, whatsappOptIn: false, smsOptOut: false,
-        }, 'invoice_due_tomorrow', {
-          business: row.business, number: row.reference ?? '', amount: formatRs(row.outstanding_cents, row.locale), date: ddmmyyyy(tomorrow),
-        }, sendAt);
-      });
-    }
+    for (const i of invoices) queued += await this.scheduleInvoiceReminders(i.org_id, i.transaction_id, now);
     if (queued) this.log.log(`Queued ${queued} reminder(s) for ${tomorrow}`);
     return queued;
+  }
+
+  /**
+   * Queue the day-before reminder for open credit invoices of one shop (or one invoice). Uses the same key as
+   * the daily planner, so an invoice is never reminded twice. Returns how many were newly scheduled.
+   */
+  async scheduleInvoiceReminders(orgId: string, onlyTransactionId?: string, now = new Date()): Promise<number> {
+    const today = todayIn(this.cfg.env.TZ_BUSINESS, now);
+    return this.db.run({ kind: 'system', orgId }, async (tx) => {
+      if (!(await this.invoiceRemindersOn(tx, orgId))) return 0;
+      const org = await tx.one<{ name: string; locale: Locale }>(`select coalesce(trading_name, legal_name) as name, default_locale as locale from organisations where id = $1`, [orgId]);
+      const rows = await tx.many<{ id: string; reference: string | null; due_date: string; phone_e164: string; outstanding_cents: number }>(
+        `select t.id, t.reference, t.due_date, c.phone_e164, v.outstanding_cents
+         from transactions t
+         join contacts c on c.id = t.contact_id and c.phone_e164 is not null and c.reminder_consent_at is not null
+         join v_open_items v on v.transaction_id = t.id
+         where t.org_id = $1 and t.kind = 'sales_invoice' and t.status = 'posted' and t.settlement = 'credit'
+           and t.due_date > $2::date and v.outstanding_cents > 0 and ($3::uuid is null or t.id = $3::uuid)`,
+        [orgId, today, onlyTransactionId ?? null],
+      );
+      let n = 0;
+      for (const r of rows) {
+        n += await this.queue(tx, orgId, `invoice:${r.id}:${r.due_date}`, {
+          userId: null, phone: r.phone_e164, locale: org.locale, whatsappOptIn: false, smsOptOut: false,
+        }, 'invoice_due_tomorrow', {
+          business: org.name, number: r.reference ?? '', amount: formatRs(r.outstanding_cents, org.locale), date: ddmmyyyy(r.due_date),
+        }, this.sendAt(addDays(r.due_date, -1)), r.id);
+      }
+      return n;
+    });
+  }
+
+  /** Switching reminders off cancels everything already scheduled for customers of that shop. */
+  async cancelInvoiceReminders(orgId: string): Promise<number> {
+    return this.db.run({ kind: 'system', orgId }, (tx) =>
+      tx.exec(`update outbound_messages set status = 'cancelled', error = 'reminders switched off' where org_id = $1 and template_key = 'invoice_due_tomorrow' and status = 'queued'`, [orgId]),
+    );
+  }
+
+  async list(orgId: string, status?: string) {
+    return this.db.run({ kind: 'system', orgId }, (tx) =>
+      tx.many(
+        `select id, template_key, channel, to_e164, scheduled_for, status, body_preview, transaction_id, sent_at, error
+         from outbound_messages where org_id = $1 and ($2::text is null or status = $2) order by scheduled_for desc limit 200`,
+        [orgId, status ?? null],
+      ),
+    );
   }
 
   /** Queue a message to a business's owners now (e.g. "a customer says they paid"); sent by the next dispatch. */
@@ -144,17 +194,23 @@ export class RemindersService implements OnModuleInit {
     }));
   }
 
-  private async queue(tx: Tx, orgId: string, key: string, r: Recipient, template: TemplateKey, vars: Record<string, string>, sendAt: Date): Promise<number> {
-    const contentSid = this.cfg.whatsappContentSids[template]?.[r.locale];
-    const channel = r.whatsappOptIn && contentSid ? 'whatsapp' : 'sms';
-    const status = channel === 'sms' && r.smsOptOut ? 'skipped' : 'queued';
+  private async queue(
+    tx: Tx, orgId: string, key: string, r: Recipient, template: TemplateKey, vars: Record<string, string>, sendAt: Date, transactionId: string | null = null,
+  ): Promise<number> {
+    const channel = chooseChannel({ whatsappOptIn: r.whatsappOptIn, hasTemplate: !!this.cfg.whatsappContentSids[template]?.[r.locale], smsOptOut: r.smsOptOut });
     const body = renderTemplate(template, r.locale, vars);
     const row = await tx.maybe(
-      `insert into outbound_messages (org_id, idempotency_key, channel, to_e164, template_key, locale, variables, body_preview, status, scheduled_for)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) on conflict (idempotency_key) do nothing returning id`,
-      [orgId, key, channel, r.phone, template, r.locale, JSON.stringify(vars), body, status, sendAt],
+      `insert into outbound_messages (org_id, idempotency_key, channel, to_e164, template_key, locale, variables, body_preview, status, scheduled_for, user_id, transaction_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       on conflict (idempotency_key) do update
+         set status = excluded.status, scheduled_for = excluded.scheduled_for, body_preview = excluded.body_preview,
+             variables = excluded.variables, channel = excluded.channel, error = null
+         where outbound_messages.status = 'cancelled'
+       returning id`,
+      [orgId, key, channel === 'whatsapp' ? 'whatsapp' : 'sms', r.phone, template, r.locale, JSON.stringify(vars), body,
+        channel === 'skip' ? 'skipped' : 'queued', sendAt, r.userId, transactionId],
     );
-    return row && status === 'queued' ? 1 : 0;
+    return row && channel !== 'skip' ? 1 : 0;
   }
 
   async dispatch(now: Date): Promise<{ sent: number; failed: number }> {
@@ -163,17 +219,52 @@ export class RemindersService implements OnModuleInit {
     const orgs = await this.db.run({ kind: 'system', orgId: null }, (tx) => tx.many<{ org_id: string }>(`select * from app.queued_message_orgs($1)`, [now]));
     for (const { org_id } of orgs) {
       await this.db.run({ kind: 'system', orgId: org_id }, async (tx) => {
-        const due = await tx.many<{ id: string; channel: 'sms' | 'whatsapp'; to_e164: string; template_key: TemplateKey; locale: Locale; variables: Record<string, string>; body_preview: string }>(
-          `select id, channel, to_e164, template_key, locale, variables, body_preview from outbound_messages
+        const due = await tx.many<{
+          id: string; channel: 'sms' | 'whatsapp'; to_e164: string; template_key: TemplateKey; locale: Locale;
+          variables: Record<string, string>; body_preview: string; user_id: string | null; transaction_id: string | null;
+        }>(
+          `select id, channel, to_e164, template_key, locale, variables, body_preview, user_id, transaction_id from outbound_messages
            where status = 'queued' and scheduled_for <= $1 order by scheduled_for limit 100 for update skip locked`,
           [now],
         );
         for (const m of due) {
+          let vars = m.variables;
+          let body = m.body_preview;
+          if (m.template_key === 'invoice_due_tomorrow' && m.transaction_id) {
+            // Paid since it was scheduled, consent withdrawn, or reminders switched off: do not chase the customer.
+            const live = await tx.maybe<{ outstanding_cents: number; consent: boolean }>(
+              `select v.outstanding_cents, (c.reminder_consent_at is not null) as consent
+               from v_open_items v join transactions t on t.id = v.transaction_id join contacts c on c.id = t.contact_id
+               where v.transaction_id = $1`,
+              [m.transaction_id],
+            );
+            if (!live || live.outstanding_cents <= 0 || !live.consent || !(await this.invoiceRemindersOn(tx, org_id))) {
+              await tx.exec(`update outbound_messages set status = 'cancelled', error = 'paid, consent withdrawn or reminders off' where id = $1`, [m.id]);
+              continue;
+            }
+            vars = { ...vars, amount: formatRs(live.outstanding_cents, m.locale) };
+            body = renderTemplate(m.template_key, m.locale, vars);
+          }
+          let channel: 'sms' | 'whatsapp' | 'skip' = m.channel;
+          if (m.user_id) {
+            const u = await tx.maybe<{ whatsapp_opt_in_at: Date | null; sms_opt_out_at: Date | null }>(
+              `select whatsapp_opt_in_at, sms_opt_out_at from users where id = $1`,
+              [m.user_id],
+            );
+            channel = chooseChannel({ whatsappOptIn: !!u?.whatsapp_opt_in_at, hasTemplate: !!this.cfg.whatsappContentSids[m.template_key]?.[m.locale], smsOptOut: !!u?.sms_opt_out_at });
+          }
+          if (channel === 'skip') {
+            await tx.exec(`update outbound_messages set status = 'skipped', error = 'opted out' where id = $1`, [m.id]);
+            continue;
+          }
           try {
-            const res = m.channel === 'whatsapp'
-              ? await this.messaging.sendWhatsApp(m.to_e164, this.cfg.whatsappContentSids[m.template_key]?.[m.locale] ?? '', positionalVariables(m.template_key, m.variables))
-              : await this.messaging.sendSms(m.to_e164, m.body_preview);
-            await tx.exec(`update outbound_messages set status = 'sent', provider_sid = $2, sent_at = now() where id = $1`, [m.id, res.sid]);
+            const res = channel === 'whatsapp'
+              ? await this.messaging.sendWhatsApp(m.to_e164, this.cfg.whatsappContentSids[m.template_key]?.[m.locale] ?? '', positionalVariables(m.template_key, vars))
+              : await this.messaging.sendSms(m.to_e164, body);
+            await tx.exec(
+              `update outbound_messages set status = 'sent', channel = $2, provider_sid = $3, sent_at = now(), body_preview = $4 where id = $1`,
+              [m.id, channel, res.sid, body],
+            );
             sent++;
           } catch (e) {
             await tx.exec(`update outbound_messages set status = 'failed', error = $2 where id = $1`, [m.id, e instanceof Error ? e.message : String(e)]);

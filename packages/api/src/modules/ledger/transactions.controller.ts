@@ -5,7 +5,9 @@ import { AppConfig } from '../../config';
 import { CurrentScope, type OrgScope, Roles, userCtx } from '../../common/auth-context';
 import { ZodBody } from '../../common/zod.pipe';
 import { Db } from '../../db/db.service';
+import { FeaturesService } from '../core/features.service';
 import { OrgGuard } from '../core/guards';
+import { JobsService } from '../core/jobs.service';
 import { LedgerService } from './ledger.service';
 import { TransactionsService } from './transactions.service';
 
@@ -19,6 +21,8 @@ export class TransactionsController {
     private readonly cfg: AppConfig,
     private readonly txns: TransactionsService,
     private readonly ledger: LedgerService,
+    private readonly features: FeaturesService,
+    private readonly jobs: JobsService,
   ) {}
 
   @Post('daily-takings')
@@ -29,13 +33,18 @@ export class TransactionsController {
 
   @Post('sales-invoices')
   @Roles(...WRITERS)
-  salesInvoice(@CurrentScope() s: OrgScope, @Body(new ZodBody(SalesInvoiceBody)) body: z.output<typeof SalesInvoiceBody>) {
-    return this.db.run(userCtx(s), (tx) => this.txns.salesInvoice(tx, s.userId, s.orgId, body));
+  async salesInvoice(@CurrentScope() s: OrgScope, @Body(new ZodBody(SalesInvoiceBody)) body: z.output<typeof SalesInvoiceBody>) {
+    if (body.settlement.mode === 'credit') await this.features.require(s.orgId, 'credit_invoices');
+    const r = await this.db.run(userCtx(s), (tx) => this.txns.salesInvoice(tx, s.userId, s.orgId, body));
+    // Background job: schedules the customer's reminder if the shop has reminders on (after commit, so it sees the invoice).
+    if (body.settlement.mode === 'credit') await this.jobs.enqueue('reminders.invoice_created', { orgId: s.orgId, transactionId: r.transactionId }).catch(() => undefined);
+    return r;
   }
 
   @Post('payments')
   @Roles('owner', 'reviewer', 'senior_reviewer', 'admin')
-  payment(@CurrentScope() s: OrgScope, @Body(new ZodBody(PaymentBody)) body: z.output<typeof PaymentBody>) {
+  async payment(@CurrentScope() s: OrgScope, @Body(new ZodBody(PaymentBody)) body: z.output<typeof PaymentBody>) {
+    await this.features.require(s.orgId, 'record_payments');
     return this.db.run(userCtx(s), (tx) => this.txns.recordPayment(tx, s.userId, s.orgId, body));
   }
 
@@ -62,7 +71,7 @@ export class TransactionsController {
   @Get('contacts')
   contacts(@CurrentScope() s: OrgScope) {
     return this.db.run(userCtx(s), (tx) =>
-      tx.many(`select id, kind, name, vat_number, phone_e164, payment_terms_days, default_category from contacts where org_id = $1 order by name`, [s.orgId]),
+      tx.many(`select id, kind, name, vat_number, phone_e164, payment_terms_days, default_category, (reminder_consent_at is not null) as reminder_consent from contacts where org_id = $1 order by name`, [s.orgId]),
     );
   }
 }

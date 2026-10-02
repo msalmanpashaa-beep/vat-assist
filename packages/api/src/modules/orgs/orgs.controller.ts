@@ -1,3 +1,4 @@
+import { FeaturesService } from '../core/features.service';
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { CreateOrgBody, LocaleSchema, OpeningBalancesBody } from '@vat-assist/shared';
 import { z } from 'zod';
@@ -13,6 +14,7 @@ const InviteBody = z.object({ phone: z.string().min(6).max(20), fullName: z.stri
 @Controller('orgs')
 export class OrgsController {
   constructor(
+    private readonly features: FeaturesService,
     private readonly db: Db,
     private readonly orgs: OrgsService,
     private readonly audit: AuditService,
@@ -32,7 +34,8 @@ export class OrgsController {
   @Post(':orgId/opening-balances')
   @UseGuards(OrgGuard)
   @Roles('owner', 'reviewer', 'senior_reviewer', 'admin')
-  opening(@CurrentScope() s: OrgScope, @Body(new ZodBody(OpeningBalancesBody)) body: z.output<typeof OpeningBalancesBody>) {
+  async opening(@CurrentScope() s: OrgScope, @Body(new ZodBody(OpeningBalancesBody)) body: z.output<typeof OpeningBalancesBody>) {
+    await this.features.require(s.orgId, 'opening_balances');
     return this.orgs.openingBalances(s, body);
   }
 

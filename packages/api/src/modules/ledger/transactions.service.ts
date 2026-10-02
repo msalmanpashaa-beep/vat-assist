@@ -61,11 +61,20 @@ export class TransactionsService {
       contactId = c.id;
       terms = c.payment_terms_days;
     } else if (body.customerName) {
-      const c = await findOrCreateContact(tx, orgId, { name: body.customerName, kind: 'customer' });
+      const c = await findOrCreateContact(tx, orgId, { name: body.customerName, kind: 'customer', phone: body.customerPhone ?? null });
       contactId = c.id;
       terms = c.payment_terms_days;
     } else {
       throw new DomainError('customer_required', 'Choose a customer or type their name.', 400);
+    }
+    if (body.customerPhone || body.customerReminderConsent !== undefined) {
+      await tx.exec(
+        `update contacts set phone_e164 = coalesce($3, phone_e164),
+                reminder_consent_at = case when $4::boolean is true then coalesce(reminder_consent_at, now())
+                                           when $4::boolean is false then null else reminder_consent_at end
+         where id = $1 and org_id = $2`,
+        [contactId, orgId, body.customerPhone ?? null, body.customerReminderConsent ?? null],
+      );
     }
     const rate = await this.rules.standardRateBp(tx, body.issueDate);
     const lines = body.lines.map((l) => ({ ...l, vat: l.vatCode === 'SR' ? vatFromNet(l.netCents, rate) : 0 }));

@@ -10,6 +10,7 @@ import { DocumentsModule } from './modules/documents/documents.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { OrgsModule } from './modules/orgs/orgs.module';
+import { OwnerModule } from './modules/owner/owner.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ReviewModule } from './modules/review/review.module';
 import { VatModule } from './modules/vat/vat.module';
@@ -21,7 +22,7 @@ import { VatModule } from './modules/vat/vat.module';
 @Module({
   imports: [
     CoreModule, AuthModule, OrgsModule, LedgerModule, DocumentsModule, VatModule,
-    ReviewModule, PaymentsModule, NotificationsModule, AdminModule,
+    ReviewModule, PaymentsModule, NotificationsModule, AdminModule, OwnerModule,
   ],
   controllers: [HealthController],
   providers: [
