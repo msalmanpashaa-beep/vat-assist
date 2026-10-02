@@ -24,4 +24,4 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
   return new NextResponse(res.status === 204 ? null : res.body, { status: res.status, headers: out });
 }
 
-export { forward as GET, forward as POST, forward as PATCH };
+export { forward as GET, forward as POST, forward as PATCH, forward as PUT, forward as DELETE };
