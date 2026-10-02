@@ -21,7 +21,9 @@
     "infra:down": "docker compose down",
     "db:migrate": "npm run migrate -w @vat-assist/api",
     "db:seed": "npm run seed -w @vat-assist/api",
-    "demo": "npm run demo -w @vat-assist/api"
+    "demo": "npm run demo -w @vat-assist/api",
+    "test:e2e": "npm run test:e2e -w @vat-assist/api",
+    "demo:data": "npm run demo:data -w @vat-assist/api"
   },
   "devDependencies": {
     "turbo": "^2.11.6",

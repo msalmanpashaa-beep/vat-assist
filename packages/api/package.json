@@ -2,7 +2,7 @@
   "name": "@vat-assist/api",
   "version": "0.1.0",
   "private": true,
-  "description": "VAT Assist API — NestJS modular monolith over PostgreSQL with row-level security.",
+  "description": "VAT Assist API \u2014 NestJS modular monolith over PostgreSQL with row-level security.",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -12,7 +12,9 @@
     "migrate": "node --env-file-if-exists=../../.env dist/scripts/migrate.js",
     "seed": "node --env-file-if-exists=../../.env dist/scripts/seed.js",
     "demo": "node --env-file-if-exists=../../.env dist/scripts/demo.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "vitest run -c vitest.e2e.config.ts",
+    "demo:data": "node --env-file-if-exists=../../.env dist/scripts/demo-data.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
