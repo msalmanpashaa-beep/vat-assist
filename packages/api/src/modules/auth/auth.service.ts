@@ -71,16 +71,22 @@ export class AuthService {
 
   // ---------- Nex-Gen staff: email + password, then an authenticator app ----------
 
+  private readonly dummyHash = argon2.hash('vat-assist-timing-equaliser', { type: argon2.argon2id });
+
   async staffLogin(email: string, password: string, meta: RequestMeta): Promise<{ mfaToken: string; totpEnrolled: boolean }> {
     this.limiter.hit(`staff-login:${email.toLowerCase()}`, 10, 900_000);
     this.limiter.hit(`staff-login-ip:${meta.ip}`, 50, 900_000);
     const u = await this.db.run({ kind: 'auth' }, (tx) =>
-      tx.maybe<{ id: string; password_hash: string; totp_enabled_at: Date | null; disabled_at: Date | null }>(
+      tx.maybe<{ id: string; password_hash: string | null; totp_enabled_at: Date | null; disabled_at: Date | null }>(
         `select id, password_hash, totp_enabled_at, disabled_at from users where email = $1 and auth_method = 'email_password_totp'`,
         [email],
       ),
     );
-    const ok = !!u && !u.disabled_at && (await argon2.verify(u.password_hash, password));
+    // Always do the argon2 work, against a dummy hash when there is no usable account (unknown email, invited
+    // but no password yet, disabled), so response time does not reveal which staff emails exist.
+    const hash = u && !u.disabled_at && u.password_hash ? u.password_hash : null;
+    const verified = await argon2.verify(hash ?? (await this.dummyHash), password);
+    const ok = hash !== null && verified;
     if (!ok || !u) throw new DomainError('invalid_credentials', 'Email or password is not right.', 401);
     return { mfaToken: await this.tokens.sign(u.id, 'mfa', null, 300), totpEnrolled: !!u.totp_enabled_at };
   }
@@ -111,8 +117,13 @@ export class AuthService {
           if (!r.valid) throw invalidCode();
         } else {
           const h = sha256Hex(code);
-          if (!u.recovery_code_hashes.includes(h)) throw invalidCode();
-          await tx.exec(`update users set recovery_code_hashes = array_remove(recovery_code_hashes, $2) where id = $1`, [userId, h]);
+          if (u.recovery_code_hashes.includes(h)) {
+            await tx.exec(`update users set recovery_code_hashes = array_remove(recovery_code_hashes, $2) where id = $1`, [userId, h]);
+          } else {
+            // A temporary code issued by a Nex-Gen admin: one use, 24 hours.
+            const temp = await tx.one<{ ok: boolean }>(`select app.use_staff_recovery_code($1, $2) as ok`, [userId, h]);
+            if (!temp.ok) throw invalidCode();
+          }
         }
       } else if (u.totp_pending_enc) {
         const r = await verify({ secret: decrypt(this.cfg.encryptionKey, u.totp_pending_enc), token: code });
@@ -202,5 +213,15 @@ export class AuthService {
         [userId, patch.locale ?? null, patch.fullName ?? null, patch.whatsappOptIn ?? null],
       ),
     );
+  }
+
+  /** Staff invite or admin password reset: set a password with the one-time link, then the authenticator step. */
+  async acceptInvite(token: string, password: string): Promise<{ mfaToken: string; totpEnrolled: boolean }> {
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+    const r = await this.db.run({ kind: 'auth' }, (tx) => tx.one<{ user_id: string | null }>(`select app.accept_staff_invite($1, $2) as user_id`, [sha256Hex(token), passwordHash]));
+    if (!r.user_id) throw new DomainError('invite_invalid', 'This link has expired or was already used. Ask your admin for a new one.', 400);
+    const u = await this.db.run({ kind: 'auth' }, (tx) => tx.one<{ totp_enabled_at: Date | null; disabled_at: Date | null }>(`select totp_enabled_at, disabled_at from users where id = $1`, [r.user_id]));
+    if (u.disabled_at) throw new DomainError('account_disabled', 'This account is disabled.', 403);
+    return { mfaToken: await this.tokens.sign(r.user_id, 'mfa', null, 300), totpEnrolled: !!u.totp_enabled_at };
   }
 }

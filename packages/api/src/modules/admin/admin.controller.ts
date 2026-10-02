@@ -1,60 +1,97 @@
-import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
+import { AssignStaffBody, BulkReassignBody, FeatureFlagsBody, StaffInviteBody } from '@vat-assist/shared';
 import { z } from 'zod';
 import { type Actor, CurrentActor, userCtx } from '../../common/auth-context';
-import { DomainError, forbidden } from '../../common/errors';
+import { DomainError } from '../../common/errors';
 import { ZodBody } from '../../common/zod.pipe';
 import { Db } from '../../db/db.service';
 import { RemindersService } from '../notifications/reminders.service';
+import { AdminService } from './admin.service';
 
-const AssignBody = z.object({ userId: z.string().uuid(), role: z.enum(['reviewer', 'senior_reviewer', 'admin', 'support']) });
 const MraListBody = z.object({ listDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), csv: z.string().min(10).max(20_000_000) });
 const RunBody = z.object({ now: z.string().datetime({ offset: true }).optional() });
 
-/** Platform administration for Nex-Gen: assign reviewers, load MRA's VAT-registered list, run reminders. */
+/** Nex-Gen platform administration: staff, sign-in controls, client assignments, feature flags, operations. */
 @Controller('admin')
 export class AdminController {
   constructor(
     private readonly db: Db,
+    private readonly admin: AdminService,
     private readonly reminders: RemindersService,
   ) {}
 
-  private async requireAdmin(a: Actor): Promise<void> {
-    const ok = await this.db.run(userCtx(a), (tx) =>
-      tx.maybe(
-        `select 1 from memberships m join organisations o on o.id = m.org_id
-         where o.is_platform and m.user_id = $1 and m.role = 'admin' and m.revoked_at is null`,
-        [a.userId],
-      ),
-    );
-    if (!ok) throw forbidden('Only Nex-Gen platform admins can do this.');
+  @Get('staff')
+  staff(@CurrentActor() a: Actor) {
+    return this.admin.staff(a);
   }
 
-  @Get('staff')
-  async staff(@CurrentActor() a: Actor) {
-    await this.requireAdmin(a);
-    return this.db.run(userCtx(a), (tx) =>
-      tx.many(
-        `select u.id, u.full_name, u.email, m.role from memberships m
-         join organisations o on o.id = m.org_id and o.is_platform join users u on u.id = m.user_id
-         where m.revoked_at is null order by u.full_name`,
-      ),
-    );
+  @Post('staff')
+  invite(@CurrentActor() a: Actor, @Body(new ZodBody(StaffInviteBody)) b: z.output<typeof StaffInviteBody>) {
+    return this.admin.invite(a, b.email, b.fullName, b.role, b.orgIds);
+  }
+
+  /** A new one-time link: for an invite that expired, or to let someone set a new password. */
+  @Post('staff/:userId/invite')
+  @HttpCode(200)
+  resend(@CurrentActor() a: Actor, @Param('userId') userId: string) {
+    return this.admin.resendInvite(a, userId);
+  }
+
+  @Post('staff/:userId/reset-2fa')
+  @HttpCode(200)
+  reset2fa(@CurrentActor() a: Actor, @Param('userId') userId: string) {
+    return this.admin.resetTwoFactor(a, userId);
+  }
+
+  @Post('staff/:userId/recovery-code')
+  @HttpCode(200)
+  recovery(@CurrentActor() a: Actor, @Param('userId') userId: string) {
+    return this.admin.recoveryCode(a, userId);
+  }
+
+  @Post('staff/:userId/disable')
+  @HttpCode(200)
+  disable(@CurrentActor() a: Actor, @Param('userId') userId: string) {
+    return this.admin.setDisabled(a, userId, true);
+  }
+
+  @Post('staff/:userId/enable')
+  @HttpCode(200)
+  enable(@CurrentActor() a: Actor, @Param('userId') userId: string) {
+    return this.admin.setDisabled(a, userId, false);
+  }
+
+  @Get('clients')
+  clients(@CurrentActor() a: Actor) {
+    return this.admin.clients(a);
   }
 
   @Post('orgs/:orgId/staff')
-  async assign(@CurrentActor() a: Actor, @Param('orgId') orgId: string, @Body(new ZodBody(AssignBody)) b: z.output<typeof AssignBody>) {
-    await this.requireAdmin(a);
-    return this.db.run(userCtx(a), (tx) => tx.one(`select app.assign_staff($1, $2, $3) as membership_id`, [orgId, b.userId, b.role]));
+  assign(@CurrentActor() a: Actor, @Param('orgId') orgId: string, @Body(new ZodBody(AssignStaffBody)) b: z.output<typeof AssignStaffBody>) {
+    return this.admin.assign(a, orgId, b.userId, b.role);
   }
 
-  /**
-   * MRA publishes the list of VAT-registered persons as a PDF, updated quarterly. Convert it to CSV
-   * (vat_number,name,brn) and load it here; suppliers missing from it get a warning, not a block.
-   */
+  @Delete('orgs/:orgId/staff/:userId')
+  unassign(@CurrentActor() a: Actor, @Param('orgId') orgId: string, @Param('userId') userId: string) {
+    return this.admin.unassign(a, orgId, userId);
+  }
+
+  @Post('assignments/bulk')
+  @HttpCode(200)
+  bulk(@CurrentActor() a: Actor, @Body(new ZodBody(BulkReassignBody)) b: z.output<typeof BulkReassignBody>) {
+    return this.admin.bulkReassign(a, b.orgIds, b.toUserId, b.role, b.fromUserId);
+  }
+
+  @Put('orgs/:orgId/features')
+  features(@CurrentActor() a: Actor, @Param('orgId') orgId: string, @Body(new ZodBody(FeatureFlagsBody)) b: z.output<typeof FeatureFlagsBody>) {
+    return this.admin.setFeatures(a, orgId, b.features);
+  }
+
+  /** MRA's quarterly list of VAT-registered persons, converted to CSV (vat_number,name,brn). */
   @Post('mra-registered-persons')
   @HttpCode(200)
   async importMraList(@CurrentActor() a: Actor, @Body(new ZodBody(MraListBody)) b: z.output<typeof MraListBody>) {
-    await this.requireAdmin(a);
+    await this.admin.requireAdmin(a);
     const rows = b.csv
       .split(/\r?\n/)
       .map((l) => l.split(',').map((c) => c.trim().replace(/^"|"$/g, '')))
@@ -76,7 +113,7 @@ export class AdminController {
   @Post('reminders/run')
   @HttpCode(200)
   async runReminders(@CurrentActor() a: Actor, @Body(new ZodBody(RunBody)) b: z.output<typeof RunBody>) {
-    await this.requireAdmin(a);
+    await this.admin.requireAdmin(a);
     return this.reminders.tick(b.now ? new Date(b.now) : new Date());
   }
 }

@@ -1,3 +1,4 @@
+import { AcceptInviteBody } from '@vat-assist/shared';
 import { Body, Controller, Get, Headers, HttpCode, Patch, Post, Req } from '@nestjs/common';
 import { LocaleSchema, RefreshBody, StaffLoginBody, StartOtpBody, TotpCodeBody, VerifyOtpBody } from '@vat-assist/shared';
 import type { Request } from 'express';
@@ -76,5 +77,12 @@ export class AuthController {
   async updateMe(@CurrentActor() a: Actor, @Body(new ZodBody(MeUpdate)) body: z.output<typeof MeUpdate>) {
     await this.auth.updateMe(a.userId, body);
     return this.auth.me(a.userId);
+  }
+
+  @Public()
+  @Post('auth/staff/invite/accept')
+  @HttpCode(200)
+  acceptInvite(@Body(new ZodBody(AcceptInviteBody)) body: z.output<typeof AcceptInviteBody>) {
+    return this.auth.acceptInvite(body.token, body.password);
   }
 }
