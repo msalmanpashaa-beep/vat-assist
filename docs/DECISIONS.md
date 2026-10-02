@@ -48,3 +48,11 @@ Items marked **Decide** need Nex-Gen's call. **Verify** means the code makes an 
 16. **Later: reopening a signed-off period.** Corrections go through the next period as late items. That keeps the signed return intact but has no "reopen" button.
 17. **Later: rate limits are per process, in memory.** Move them to Redis before running more than one API instance.
 18. **Policy: retention.** Documents are kept 6 years, beyond the 5-year legal minimum.
+
+## Owner and admin screens
+
+19. **Decide: an email provider for staff invites.** Today the admin console shows the one-time link and the admin sends it. Microsoft 365 (Graph), Postmark or Resend would all fit behind a small provider interface.
+20. **Policy: staff recovery.** Admin-issued temporary codes work once, within 24 hours, and need an authenticator that was set up. For a lost phone, use Reset 2FA instead. Both actions are recorded in the audit trail.
+21. **Decide: feature flag defaults.** All five flags default to on (`packages/shared/src/features.ts`). Switch a flag's default off to roll a screen out to pilot shops only.
+22. **Verify: customer consent for reminders.** Invoice reminders go only to customers with a mobile number and recorded consent. Confirm the consent wording with the Data Protection Act review.
+

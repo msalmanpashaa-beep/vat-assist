@@ -4,7 +4,7 @@ VAT Assist demo against http://localhost:4000
     signed in +23057100001
 
  2. Onboarding: business details, then opening balances on the start date
-    organisation db8017b2-147d-406d-9fdb-2c0e1103133d; first period due 2026-10-20 (electronic 2026-11-03)
+    organisation f4140442-ea91-499f-a1be-cf59d046d8c6; first period due 2026-10-20 (electronic 2026-11-03)
     opening journal entry #1, 2 open items carried into ageing
 
  3. Nex-Gen admin signs in (password + authenticator) and assigns a reviewer and a senior reviewer
@@ -26,8 +26,8 @@ VAT Assist demo against http://localhost:4000
     saved
 
  7. Customer pays Rs 2,000 by Juice from the pay link, attaches the screenshot; the shop confirms
-    pay link shows Rs 2,000.00 to Boutik Demo, reference VARF44S4; ways to pay: card (mips), juice, bank_transfer
-    owner is told: Hotel Demo Ltd says Rs 2,000.00 by juice, ref VARF44S4, screenshot attached
+    pay link shows Rs 2,000.00 to Boutik Demo, reference VANH4B3F; ways to pay: card (mips), juice, bank_transfer
+    owner is told: Hotel Demo Ltd says Rs 2,000.00 by juice, ref VANH4B3F, screenshot attached
     confirmed: receipt posted against INV-00001; the link now shows paid
 
  8. A bank transfer the customer says they made, but nothing arrived: the shop rejects it
@@ -39,7 +39,7 @@ VAT Assist demo against http://localhost:4000
     IMN {"received":true}, repeat {"received":true,"duplicate":true}
 
 10. Owner books the Nex-Gen onboarding call: Rs 25 deposit by card through Stripe
-    pay Nex-Gen Africa Rs 25.00, reference VAH4BKPZ; ways to pay: card, juice, bank_transfer
+    pay Nex-Gen Africa Rs 25.00, reference VANTQ29Z; ways to pay: card, juice, bank_transfer
     forged signature refused, first delivery {"received":true}, retry {"received":true,"duplicate":true}; booking confirmed; Nex-Gen output VAT Rs 3.26
 
 11. Owner pays the opening supplier balance; ageing for both sides
@@ -56,7 +56,7 @@ VAT Assist demo against http://localhost:4000
 14. Return: reviewer drafts, only a senior reviewer can sign off
     draft v1: output Rs 1,500.00, input Rs 990.00, payable Rs 510.00
     reviewer sign-off refused (403)
-    signed off; fingerprint 384bd7cc17ac82f3...; Q3 is now locked
+    signed off; fingerprint 0248f6753530c400...; Q3 is now locked
 
 15. A late purchase invoice dated 25/09 arrives after sign-off
     posted; recorded late: true (Recorded after Q3 2026 was signed off)
@@ -79,6 +79,6 @@ VAT Assist demo against http://localhost:4000
     another shop owner cannot read Boutik Demo (refused)
 
 18. Audit trail: hash chain verifies end to end
-    {"ok":true,"checked":63,"firstBadSeq":null,"head":{"seq":63,"hash":"19e5e577294023b65204daf378d74cbac6daf237b5bc102e5fbf286ac2fcaa0e"}}
+    {"ok":true,"checked":65,"firstBadSeq":null,"head":{"seq":65,"hash":"79a1af16fc06b508fe876e656af15760561b149bb237f1aa6e4e161e130a051e"}}
 
 Demo finished: every check passed.
