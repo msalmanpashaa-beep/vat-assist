@@ -11,7 +11,7 @@ export interface StaffRow {
 }
 
 interface InviteResult { inviteUrl: string | null; email: { status: 'sent' | 'failed'; provider: string; error: string | null } }
-const PROVIDER_LABEL: Record<string, string> = { console: 'the development outbox', postmark: 'Postmark', resend: 'Resend', m365: 'Microsoft 365' };
+const PROVIDER_LABEL: Record<string, string> = { console: 'the development outbox', smtp: 'your mail server (SMTP)', postmark: 'Postmark', resend: 'Resend', m365: 'Microsoft 365' };
 
 /** Emailed: say so, show no link. Not emailed: say why and give the admin the link to pass on. */
 function inviteOutcome(to: string, r: InviteResult, extra = ''): { title: string; value: string | null } {
@@ -81,6 +81,14 @@ export function StaffAdmin({ staff, clients = [] }: { staff: StaffRow[]; clients
           )}
         </div>
       )}
+      <p style={{ margin: '0 0 1rem' }}>
+        <button className="btn quiet" disabled={!!busy} onClick={() => act('test-email', async () => {
+          const r = await send<{ to: string; status: 'sent' | 'failed'; provider: string; error: string | null }>('POST', '/admin/mail/test', {});
+          return r.status === 'sent'
+            ? { title: `Test email sent to ${r.to} via ${PROVIDER_LABEL[r.provider] ?? r.provider}. Check the inbox and the spam folder.`, value: null }
+            : { title: `The test email to ${r.to} failed: ${r.error ?? 'unknown error'}`, value: null };
+        })}>{busy === 'test-email' ? 'Sending…' : 'Send a test email to me'}</button>
+      </p>
       <form onSubmit={invite} className="panel" aria-label="Invite staff" style={{ marginBottom: '1.5rem' }}>
         <h2 style={{ marginTop: 0 }}>Invite someone</h2>
         <div className="row-grid">
