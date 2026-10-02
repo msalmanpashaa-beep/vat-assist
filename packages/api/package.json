@@ -14,7 +14,8 @@
     "demo": "node --env-file-if-exists=../../.env dist/scripts/demo.js",
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
-    "demo:data": "node --env-file-if-exists=../../.env dist/scripts/demo-data.js"
+    "demo:data": "node --env-file-if-exists=../../.env dist/scripts/demo-data.js",
+    "test:e2e:smtp": "vitest run -c vitest.e2e.config.ts test/e2e/staff-invite-smtp.e2e.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
@@ -30,6 +31,7 @@
     "ioredis": "^6.0.0",
     "jose": "^6.2.12",
     "libphonenumber-js": "^1.13.14",
+    "nodemailer": "^10.0.13",
     "otplib": "^13.5.0",
     "pdfkit": "^0.20.2",
     "pg": "^8.23.1",
@@ -42,10 +44,14 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
+    "@types/mailparser": "^3.9.0",
     "@types/multer": "^2.3.0",
     "@types/node": "^22.10.0",
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.23.1",
+    "@types/smtp-server": "^3.5.13",
+    "mailparser": "^3.9.33",
+    "smtp-server": "^3.19.16",
     "typescript": "~6.0.3",
     "vitest": "^5.0.3"
   }
