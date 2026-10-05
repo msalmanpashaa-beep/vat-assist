@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/.next
+**/.expo
+**/.turbo
+**/demo-output
+**/storage-dev
+**/*.log
+**/*.tsbuildinfo
+.git
+.github
+docs
+.env
+.env.*
+!.env.example
+!.env.production.example

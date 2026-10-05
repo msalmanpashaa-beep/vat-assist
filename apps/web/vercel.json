@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "cd ../.. && npm ci --workspace @vat-assist/web --workspace @vat-assist/shared --include-workspace-root --no-audit --no-fund",
+  "buildCommand": "cd ../.. && npx turbo run build --filter=@vat-assist/web"
+}

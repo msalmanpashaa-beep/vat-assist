@@ -1,0 +1,116 @@
+name: Deploy
+
+# Runs after CI passes on main (or by hand): migrations, then the API image, then the web app on Vercel.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  migrate:
+    name: Database migrations
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --workspace @vat-assist/api --workspace @vat-assist/shared --include-workspace-root --no-audit --no-fund
+      - run: npx turbo run build --filter=@vat-assist/api
+      - name: Apply migrations (each once, checksummed)
+        env:
+          DATABASE_OWNER_URL: ${{ secrets.DATABASE_OWNER_URL }}
+        run: node packages/api/dist/scripts/migrate.js
+
+  api:
+    name: API image and release
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/api" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/api/Dockerfile
+          push: true
+          build-args: GIT_SHA=${{ env.RELEASE_SHA }}
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ env.RELEASE_SHA }}
+            ${{ steps.image.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Ask the host to release the new image
+        env:
+          API_DEPLOY_HOOK_URL: ${{ secrets.API_DEPLOY_HOOK_URL }}
+        run: curl -fsS -X POST "$API_DEPLOY_HOOK_URL"
+      - name: Wait until the new version answers
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: |
+          for _ in $(seq 1 60); do
+            version=$(curl -fsS "$API_BASE_URL/health" | jq -r .version || true)
+            if [ "$version" = "$RELEASE_SHA" ]; then echo "API $version is live"; exit 0; fi
+            sleep 10
+          done
+          echo "The API did not report version $RELEASE_SHA in time"
+          exit 1
+
+  web:
+    name: Web app on Vercel
+    needs: api
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: npm install --global vercel@latest
+      - run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - run: vercel build --prod --token="$VERCEL_TOKEN"
+      - run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+      - name: Smoke test
+        env:
+          WEB_BASE_URL: ${{ vars.WEB_BASE_URL }}
+        run: curl -fsS -o /dev/null "$WEB_BASE_URL/login"
