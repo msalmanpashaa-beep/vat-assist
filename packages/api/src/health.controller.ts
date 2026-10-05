@@ -10,6 +10,6 @@ export class HealthController {
   @Get()
   async health() {
     const r = await this.db.run({ kind: 'auth' }, (tx) => tx.one<{ now: Date }>(`select now()`));
-    return { ok: true, database: 'up', time: r.now };
+    return { ok: true, database: 'up', time: r.now, version: process.env.GIT_SHA ?? 'dev' };
   }
 }

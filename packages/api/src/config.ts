@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const optional = z.string().min(1).optional();
 
-const EnvSchema = z.object({
+export const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().default(4000),
   PUBLIC_BASE_URL: z.string().url().default('http://localhost:4000'),

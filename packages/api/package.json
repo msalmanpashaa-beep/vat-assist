@@ -15,7 +15,10 @@
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
     "demo:data": "node --env-file-if-exists=../../.env dist/scripts/demo-data.js",
-    "test:e2e:smtp": "vitest run -c vitest.e2e.config.ts test/e2e/staff-invite-smtp.e2e.ts"
+    "test:e2e:smtp": "vitest run -c vitest.e2e.config.ts test/e2e/staff-invite-smtp.e2e.ts",
+    "config:check": "node dist/scripts/config-check.js",
+    "demo:pitch": "node dist/scripts/demo-pitch.js",
+    "bootstrap": "node dist/scripts/bootstrap.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
