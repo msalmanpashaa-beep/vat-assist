@@ -11,16 +11,24 @@ export interface MessagingProvider {
 
 export const MESSAGING = Symbol('MESSAGING');
 
-class ConsoleMessaging implements MessagingProvider {
+/** Development: messages print in the API log; the last 100 are kept for GET /dev/messages/outbox. */
+export class ConsoleMessaging implements MessagingProvider {
   readonly name = 'console' as const;
   private readonly log = new Logger('Messages');
+  readonly outbox: Array<{ channel: 'sms' | 'whatsapp'; to: string; body: string; sid: string; sentAt: string }> = [];
+  private keep(channel: 'sms' | 'whatsapp', to: string, body: string) {
+    const sid = `console-${randomUUID()}`;
+    this.outbox.unshift({ channel, to, body, sid, sentAt: new Date().toISOString() });
+    if (this.outbox.length > 100) this.outbox.length = 100;
+    return { sid };
+  }
   async sendSms(to: string, body: string) {
     this.log.log(`SMS to ${to}: ${body}`);
-    return { sid: `console-${randomUUID()}` };
+    return this.keep('sms', to, body);
   }
   async sendWhatsApp(to: string, contentSid: string, variables: Record<string, string>) {
     this.log.log(`WhatsApp to ${to}: template ${contentSid} ${JSON.stringify(variables)}`);
-    return { sid: `console-${randomUUID()}` };
+    return this.keep('whatsapp', to, `template ${contentSid} ${JSON.stringify(variables)}`);
   }
 }
 

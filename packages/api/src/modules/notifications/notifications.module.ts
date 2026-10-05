@@ -1,3 +1,4 @@
+import { DevMessagesController } from './dev-messages.controller';
 import { Module } from '@nestjs/common';
 import { AppConfig } from '../../config';
 import { VatModule } from '../vat/vat.module';
@@ -7,7 +8,7 @@ import { TwilioWebhooksController } from './twilio.controller';
 
 @Module({
   imports: [VatModule],
-  controllers: [TwilioWebhooksController],
+  controllers: [TwilioWebhooksController, DevMessagesController],
   providers: [RemindersService, { provide: MESSAGING, inject: [AppConfig], useFactory: createMessaging }],
   exports: [RemindersService],
 })
