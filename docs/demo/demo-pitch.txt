@@ -1,0 +1,49 @@
+VAT Assist pitch demo
+
+ 1. Onboarding: the owner signs in by SMS code (Kreol) and sets up the shop
+    Boutik Pitch 88501: first return due 2026-10-20 (or 2026-11-03 filed and paid online); referral code NXDUE9Y6
+    opening balances recorded; a reviewer and a senior reviewer assigned
+
+ 2. Snap an invoice: photographed on the phone, checked for sharpness and duplicates
+    uploaded and checked: awaiting_owner
+
+ 3. Extraction: what was read, and how sure the system is
+    Grossiste Demo Ltd (VAT 27999902), invoice INV-0457 of 2026-08-03
+    net Rs 4,000.00 + VAT Rs 600.00 = Rs 4,600.00; confidence 97%, flags: none
+
+ 4. Posting: two taps ("on credit", "stock to resell") and it is in the books
+    purchase posted: owed to Grossiste Demo Ltd Rs 4,600.00, input VAT Rs 600.00 claimable
+    plus one day of takings (Rs 6,900 incl. VAT) and a credit invoice to Hotel Demo Ltd (Rs 4,600)
+
+ 5. VAT Pot: what to set aside for MRA, live
+    VAT on sales Rs 1,500.00 - VAT on purchases Rs 600.00 = set aside Rs 900.00
+
+ 6. Reviewer query: a receipt without a VAT number goes to the Chartered Accountant
+    reviewer asked, owner answered in Kreol, reviewer approved (VAT recorded as a cost) and closed the question
+
+ 7. Sign-off: a draft from the ledger, signed by a senior reviewer, period locked
+    draft v1: VAT payable Rs 900.00; reviewer cannot sign (403); senior signed, fingerprint 1fb0eccfaffa...
+
+ 8. Stripe payment: the Rs 25 deposit for the Nex-Gen onboarding call
+    checkout Rs 25.00 paid; forged webhook refused, signed one accepted; booking confirmed
+    Nex-Gen's own books: output VAT on the deposit Rs 3.26
+
+ 9. Twilio reminder: the evening before the 20 October deadline
+    reminder run: 3 queued, 3 sent
+    SMS to +23057100051: "VAT Assist: Demin (20/10/2026) dernie zour pou deklarasion VAT Q3 2026 Boutik Pitch 88501. Montan pou met de kote: Rs 900,00."
+
+10. Return builder: guided filing, filing pack, MRA acknowledgement, payment, close
+    Standard-rated supplies, excluding VAT: Rs 10,000.00
+    Zero-rated supplies: Rs 0.00
+    Exempt supplies: Rs 0.00
+    Output tax: Rs 1,500.00
+    Purchases on which you claim VAT, excluding VAT: Rs 4,000.00
+    Input tax claimed: Rs 600.00
+    VAT payable: Rs 900.00
+    filing pack saved (demo-output/pitch-filing-pack-Q3-2026.pdf, 5 KB); acknowledged, paid; Q3 is closed
+
+11. Deploy: production settings checked, pipeline ready
+    .env.production.example passes every production rule; 14 secrets to set on the hosts (DATABASE_URL, DATABASE_OWNER_URL, JWT_SECRET, DATA_ENCRYPTION_KEY, ...)
+    on merge to main: CI (types, unit, screen, end to end, SMTP) → migrations → API image → Vercel web → smoke tests
+
+Pitch demo finished: every check passed.

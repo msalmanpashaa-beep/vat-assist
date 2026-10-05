@@ -51,10 +51,19 @@ Items marked **Decide** need Nex-Gen's call. **Verify** means the code makes an 
 
 ## Owner and admin screens
 
-19. **Recommended: staff invites go out from Nex-Gen's own cPanel-hosted mail over SMTP.** Use a dedicated `invites@nex-gen.africa` mailbox, with replies to `connect@nex-gen.africa`.
-    - Still to do: create the mailbox; confirm SPF and DKIM in Email Deliverability; add DMARC; set `SMTP_*` in production; send a test email from the console; confirm the host's hourly sending limit.
-    - Postmark, Resend and Microsoft 365 remain available behind the same interface if volume or deliverability ever requires it.
+19. **Decided (for now): staff invites go out from `connect@nex-gen.africa` over SMTP** (`mail.nex-gen.africa`, port 465, cPanel).
+    - Still to do: confirm SPF and DKIM in Email Deliverability; add DMARC; set `SMTP_PASS` on the host only; send a test email; ask the host for the hourly sending limit.
+    - A dedicated `invites@` mailbox later would keep the main password off servers.
 20. **Policy: staff recovery.** Admin-issued temporary codes work once, within 24 hours, and need an authenticator that was set up. For a lost phone, use Reset 2FA instead. Both actions are recorded in the audit trail.
 21. **Decide: feature flag defaults.** All five flags default to on (`packages/shared/src/features.ts`). Switch a flag's default off to roll a screen out to pilot shops only.
 22. **Verify: customer consent for reminders.** Invoice reminders go only to customers with a mobile number and recorded consent. Confirm the consent wording with the Data Protection Act review.
+
+## Deployment and pilot
+
+23. **Decide: the API host.** Any container host that runs an image from GitHub's registry, keeps secrets, checks `/health` and offers a deploy hook will do: Render, Railway, Fly.io, DigitalOcean App Platform. Choose on price, region and support.
+24. **Decide: where the data lives.** The database, Redis and the S3 bucket should sit in one region; AWS `af-south-1` (Cape Town) is the closest AWS region. Data leaves Mauritius either way, so complete the Data Protection Act 2017 transfer assessment (item 15) before real shops are onboarded.
+25. **Verify: the Vercel plan.** Vercel's Hobby plan is for non-commercial use, so a paid pilot needs Pro.
+26. **Decide: pilot targets.** Reviewer time under 20 minutes per shop per quarter is set. The others are proposals in `docs/PILOT.md`: activation ≥ 80% within 14 days, on-time filing ≥ 95%, churn ≤ 10%, ≥ 3 referrals.
+    - Reviewer minutes are estimated from recorded actions, so calibrate them against a stopwatch on a few shops in the first weeks.
+27. **Later: phone app releases.** EAS builds and store submission are manual for now. For the pilot, Google Play internal testing and TestFlight are enough.
 

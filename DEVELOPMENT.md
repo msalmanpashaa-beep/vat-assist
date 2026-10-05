@@ -96,7 +96,7 @@ Invites are sent through one mail interface (`packages/api/src/modules/mail`). `
 | `MAIL_PROVIDER` | Sends through | Use when |
 |---|---|---|
 | `console` (default) | Nothing: printed in the API log | Development and tests |
-| `smtp` | Your own mailbox over SMTP, for example on cPanel hosting | **Nex-Gen today:** a dedicated `invites@nex-gen.africa` mailbox on the existing host. No new vendor or cost |
+| `smtp` | Your own mailbox over SMTP, for example on cPanel hosting | **Nex-Gen today:** `connect@nex-gen.africa` on the existing cPanel host. No new vendor or cost |
 | `m365` | Microsoft Graph, from a Nex-Gen mailbox | Nex-Gen's mail is on Microsoft 365. No new vendor, and invites appear in the mailbox's Sent Items |
 | `postmark` | Postmark | You want a dedicated transactional email service |
 | `resend` | Resend | You want the quickest setup |
@@ -114,36 +114,36 @@ How it behaves:
 - The last 50 are kept at `GET /dev/mail/outbox?to=<email>`. This is development only and returns 404 in production or with a real provider.
 - Addresses on the reserved `.invalid` domain (e.g. `someone@fail.invalid`) fail on purpose, so you can try the not-sent path.
 
-### Nex-Gen's cPanel mailbox (SMTP), recommended now
+### Nex-Gen's cPanel mailbox (SMTP), in use now
 
-Nex-Gen's mail (`connect@nex-gen.africa`) runs on the cPanel hosting, so invites can go out from the same host. Use a separate mailbox for the app, so the password of `connect@` never sits in a server's settings, and send replies to `connect@`.
+**For now, invites go out from `connect@nex-gen.africa` itself**, so replies land straight back in that inbox. Later, a dedicated mailbox such as `invites@nex-gen.africa` would keep the main mailbox's password off servers. Only `SMTP_USER`, `SMTP_PASS` and `MAIL_FROM` would change.
 
-1. **Create the mailbox.** cPanel → Email Accounts → Create: `invites@nex-gen.africa`, with a long random password.
-2. **Find the server settings.** In Email Accounts, choose **Connect Devices** for the new mailbox. Under the secure SSL/TLS settings, note the outgoing server and its SMTP port (usually 465).
-3. **Check that mail from the domain is trusted.**
-   - cPanel → **Email Deliverability**: SPF and DKIM for `nex-gen.africa` should show as valid. If your DNS is managed in cPanel, it can install the suggested records; otherwise add them where your DNS is hosted.
-   - Add a DMARC record (TXT on `_dmarc.nex-gen.africa`), starting with `v=DMARC1; p=none; rua=mailto:connect@nex-gen.africa`. Tighten it to `quarantine` once the reports look clean.
-4. **Settings for the API:**
+cPanel's Connect Devices settings for the mailbox:
+- **Outgoing server:** `mail.nex-gen.africa`
+- **SMTP port:** 465, secure SSL/TLS
+- **Sign-in:** required; the username is the full address.
+
+1. **Check that mail from the domain is trusted.**
+   - cPanel → **Email Deliverability**: SPF and DKIM for `nex-gen.africa` should show as valid.
+   - Add a DMARC record (TXT on `_dmarc.nex-gen.africa`): `v=DMARC1; p=none; rua=mailto:connect@nex-gen.africa`. Tighten it once the reports look clean.
+2. **Settings for the API** (also in `.env.production.example`):
 
 ```
 MAIL_PROVIDER=smtp
 SMTP_HOST=mail.nex-gen.africa
 SMTP_PORT=465
-SMTP_USER=invites@nex-gen.africa
-SMTP_PASS=<the mailbox password>
-MAIL_FROM=Nex-Gen Africa <invites@nex-gen.africa>
-MAIL_REPLY_TO=connect@nex-gen.africa
+SMTP_TLS=implicit
+SMTP_USER=connect@nex-gen.africa
+SMTP_PASS=<the mailbox password, set only in the host's secret settings>
+MAIL_FROM="Nex-Gen Africa <connect@nex-gen.africa>"
 ```
 
-   - `SMTP_HOST` is the outgoing server Connect Devices shows. If the certificate does not match `mail.nex-gen.africa`, use the server name shown there. The error message says so.
-   - Port 587 also works; it upgrades to TLS before signing in. Port 25 is often blocked by cloud hosts, so don't use it.
-   - Send from the same mailbox you sign in with (`MAIL_FROM` and `SMTP_USER`). Many hosts reject or flag anything else, and the API warns at startup if they differ.
-   - The password is a secret: keep it in the production secret store, not in the code, and change it if it leaks.
-5. **Check it works.** Admin → Staff → **Send a test email to me**. The result shows at once; then check the inbox and the spam folder. Then invite yourself to see the real invite.
+   `MAIL_FROM` must be the mailbox you sign in with; the host rejects anything else, and the API warns at startup.
+3. **Check it works.** Admin → Staff → **Send a test email to me**, then look in the inbox and the spam folder.
 
-**Limits:** hosting plans usually cap how many emails a mailbox may send per hour, so ask the host what yours is. Staff invites are a handful a month. If VAT Assist later emails customers in volume, move to Postmark or Resend on the same domain. Their DNS records sit alongside the cPanel mail without disturbing it.
+**Limits:** hosting plans cap how many emails a mailbox may send per hour, so ask the host. Staff invites are a handful a month. If VAT Assist later emails customers in volume, move to Postmark or Resend on the same domain.
 
-**Plaintext SMTP** (`SMTP_TLS=none`) is only accepted for a test server on `127.0.0.1`/`localhost`, outside production. Everything else uses TLS (TLS 1.2 or newer).
+**Plaintext SMTP** (`SMTP_TLS=none`) is only accepted for a test server on `127.0.0.1` or `localhost`, outside production.
 
 ### Microsoft 365 (Graph)
 
@@ -208,6 +208,21 @@ MAIL_FROM=Nex-Gen Africa <invites@yourdomain>
 4. **Before the domain is verified,** Resend's test addresses work: send from `onboarding@resend.dev` to `delivered@resend.dev`.
 5. **Duplicates:** each invite carries an `Idempotency-Key`, so a retried request does not email twice. Resend keeps keys for 24 hours.
 
+## Deployment, pilot and demos
+
+- **Deploying:** `docs/DEPLOYMENT.md`.
+  - The web app runs on Vercel; the API runs as a container.
+  - GitHub Actions deploys after CI passes: migrations, then the API image, then the web app.
+  - Check production settings with `npm run config:check -- ../../.env.production`. Add `--template` to check `.env.production.example`.
+  - First admin in a new environment: `npm run bootstrap -- --platform-name "..." --admin-email ... --admin-name "..."`.
+- **Pilot:** `docs/PILOT.md` has the checklist, the targets and the weekly routine. **Admin → Pilot** shows the live scorecard.
+  - Shops get a referral code at sign-up; a new shop can quote one.
+- **Demos:**
+  - `npm run demo:pitch` is the presentation order with narration and checks.
+  - `docs/DEMO-SCRIPT.md` is the talk track.
+  - `npm run demo` is the full 18-step story.
+- **Development outboxes:** SMS and WhatsApp messages sent by the console provider are at `GET /dev/messages/outbox?to=<+230...>`; emails are at `GET /dev/mail/outbox`.
+
 ## Tests
 
 ```
@@ -232,10 +247,10 @@ The end-to-end suite (`packages/api/test/e2e/owner-admin.e2e.ts`) creates its ow
 
 ```
 # terminal 1
-MAIL_PROVIDER=smtp SMTP_HOST=127.0.0.1 SMTP_PORT=2525 SMTP_TLS=none SMTP_USER=invites@nex-gen.africa SMTP_PASS=e2e-smtp-pass \
-  MAIL_FROM="Nex-Gen Africa <invites@nex-gen.africa>" MAIL_REPLY_TO=connect@nex-gen.africa npm run dev:api
+MAIL_PROVIDER=smtp SMTP_HOST=127.0.0.1 SMTP_PORT=2525 SMTP_TLS=none SMTP_USER=connect@nex-gen.africa SMTP_PASS=e2e-smtp-pass \
+  MAIL_FROM="Nex-Gen Africa <connect@nex-gen.africa>" npm run dev:api
 # terminal 2
-E2E_SMTP_SINK_PORT=2525 E2E_SMTP_USER=invites@nex-gen.africa E2E_SMTP_PASS=e2e-smtp-pass E2E_SMTP_REPLY_TO=connect@nex-gen.africa npm run test:e2e:smtp
+E2E_SMTP_SINK_PORT=2525 E2E_SMTP_USER=connect@nex-gen.africa E2E_SMTP_PASS=e2e-smtp-pass npm run test:e2e:smtp
 ```
 
 The suite checks:

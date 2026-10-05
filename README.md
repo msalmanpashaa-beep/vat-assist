@@ -8,9 +8,9 @@ The owner photographs bills, records the day's takings and sends customers a pay
 
 | Part | Path | Stack | Status |
 |---|---|---|---|
-| API | `packages/api` | NestJS 12, Postgres 16 with row-level security, plain SQL | Builds; 55 unit tests; 21 end-to-end tests (2 of them over real SMTP) and the 18-step demo pass against a real database |
+| API | `packages/api` | NestJS 12, Postgres 16 with row-level security, plain SQL | Builds; 66 unit tests; 26 end-to-end tests (2 over real SMTP), the 18-step demo and the pitch demo pass against a real database |
 | Shared | `packages/shared` | TypeScript: money, VAT, MRA calendar, i18n (en/fr/Kreol), contracts, form builders | Builds; 25 unit tests |
-| Web console | `apps/web` | Next.js 16 (App Router): reviewer, owner, admin, public pay page | Production build passes; 15 screen tests |
+| Web console | `apps/web` | Next.js 16 (App Router): reviewer, owner, admin, public pay page | Production build passes; 16 screen tests |
 | Phone app | `apps/mobile` | Expo SDK 57, Expo Router | Type-checks; 12 screen tests (Jest); Android bundle builds; not yet run on a device |
 
 `docs/demo/` holds the transcript of the last end-to-end run and the filing-pack PDF it produced.
@@ -79,4 +79,4 @@ npm test                                   # shared + api unit tests
 npm run typecheck                          # every package
 ```
 
-`DEVELOPMENT.md` covers running the owner and admin screens, feature flags and every test suite. Read `docs/DECISIONS.md` before going live. It lists what is assumed, what is unverified, and what needs a decision.
+`DEVELOPMENT.md` covers running the owner and admin screens, feature flags and every test suite. `docs/DEPLOYMENT.md` covers production (Vercel for the web app, a container for the API, GitHub Actions). `docs/PILOT.md` is the 10-shop pilot plan, and `docs/DEMO-SCRIPT.md` the demo talk track (`npm run demo:pitch`). Read `docs/DECISIONS.md` before going live. It lists what is assumed, what is unverified, and what needs a decision.

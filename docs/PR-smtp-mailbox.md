@@ -2,7 +2,7 @@
 
 ## Why
 
-Nex-Gen's mail (`connect@nex-gen.africa`) is hosted on cPanel, not Microsoft 365. The simplest production setup is to send invites from a dedicated mailbox on the same host: no new vendor, no new cost.
+Nex-Gen's mail (`connect@nex-gen.africa`) is hosted on cPanel, not Microsoft 365. The simplest production setup is to send invites from that mailbox on the same host: no new vendor, no new cost.
 
 ## Changes
 
@@ -23,4 +23,4 @@ Nex-Gen's mail (`connect@nex-gen.africa`) is hosted on cPanel, not Microsoft 365
 
 ## Before production
 
-Follow "Nex-Gen's cPanel mailbox (SMTP)" in `DEVELOPMENT.md`: create `invites@nex-gen.africa`, check SPF and DKIM, add DMARC, set the `SMTP_*` settings, and send a test email from the console.
+Follow "Nex-Gen's cPanel mailbox (SMTP)" in `DEVELOPMENT.md`. Invites are sent from `connect@nex-gen.africa` for now: check SPF and DKIM, add DMARC, set the `SMTP_*` settings, and send a test email from the console.
