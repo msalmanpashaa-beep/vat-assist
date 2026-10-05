@@ -11,10 +11,11 @@ interface Incoming { id: string; provider: string; amount_cents: number; payer_n
 
 export default async function OwnerShop({ params }: { params: Promise<{ orgId: string }> }) {
   const { orgId } = await params;
-  const [pot, periods, incoming] = await Promise.all([
+  const [pot, periods, incoming, org] = await Promise.all([
     api<VatPot>(`/orgs/${orgId}/vat-pot`, `/owner/${orgId}`),
     api<Period[]>(`/orgs/${orgId}/periods`, `/owner/${orgId}`),
     api<Incoming[]>(`/orgs/${orgId}/incoming-payments?status=awaiting_confirmation`, `/owner/${orgId}`),
+    api<{ referral_code: string | null }>(`/orgs/${orgId}`, `/owner/${orgId}`),
   ]);
   const today = new Date().toISOString().slice(0, 10);
   return (
@@ -22,6 +23,9 @@ export default async function OwnerShop({ params }: { params: Promise<{ orgId: s
       <h1>Your VAT</h1>
       <p className="lede">Take photos of bills and record sales in the app. This page shows where each return stands.</p>
       <VatPotSlip pot={pot} />
+      {org.referral_code && (
+        <p className="lede" style={{ marginTop: '1rem' }}>Your referral code: <strong>{org.referral_code}</strong>. Give it to other shop owners when they sign up.</p>
+      )}
       {incoming.length > 0 && (
         <>
           <h2>Payments to confirm</h2>

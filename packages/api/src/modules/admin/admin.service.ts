@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { type FeatureKey, FEATURE_KEYS, resolveFeatures, type StaffRole } from '@vat-assist/shared';
+import { type FeatureKey, FEATURE_KEYS, resolveFeatures, type StaffRole, todayIn } from '@vat-assist/shared';
 import { randomBytes } from 'node:crypto';
 import { AppConfig } from '../../config';
 import { type Actor, userCtx } from '../../common/auth-context';
@@ -10,6 +10,7 @@ import { AuditService } from '../core/audit.service';
 import { MAIL_PROVIDER, MailError, type MailProvider } from '../mail/mail';
 import { staffInviteEmail, testEmail } from '../mail/templates';
 import { RemindersService } from '../notifications/reminders.service';
+import { activation, churned, filingRecord, PILOT_TARGETS, type PilotPeriod, type PilotRow, quarterBounds, quarterOf, reviewerMinutes, scorecard } from './pilot-metrics';
 
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const INVITE_DAYS = 7;
@@ -152,6 +153,45 @@ export class AdminService {
     );
     await this.auditIn(await this.platformId(), 'mail.test_sent', 'user', a.userId, a, { to: recipient, status: delivery.status, provider: delivery.provider });
     return { to: recipient, status: delivery.status, provider: delivery.provider, error: delivery.error };
+  }
+
+  /** The pilot scorecard: activation, reviewer minutes, on-time filing, churn and referrals, per shop and overall. */
+  async pilot(a: Actor, cohort: string | null, quarter: string | null) {
+    await this.requireAdmin(a);
+    const now = new Date();
+    const today = todayIn(this.cfg.env.TZ_BUSINESS, now);
+    const q = quarterBounds(quarter ?? quarterOf(today));
+    const raw = await this.db.run(userCtx(a), (tx) =>
+      tx.many<{
+        org_id: string; org_name: string; cohort: string | null; signed_up_at: Date; files_electronically: boolean; opening_at: Date | null;
+        docs_14d: number; sales_14d: number; last_owner_activity: Date | null; staff_action_times: Date[]; periods: PilotPeriod[];
+        referrals: number; subscription_status: string | null;
+      }>(`select * from app.admin_pilot_data($1, $2, $3)`, [cohort, q.from, q.to]),
+    );
+    const rows: PilotRow[] = raw.map((r) => ({
+      orgId: r.org_id, orgName: r.org_name, cohort: r.cohort, signedUpAt: r.signed_up_at, filesElectronically: r.files_electronically,
+      openingAt: r.opening_at, docs14d: r.docs_14d, sales14d: r.sales_14d, lastOwnerActivity: r.last_owner_activity,
+      staffActionTimes: (r.staff_action_times ?? []).map((t) => new Date(t)), periods: r.periods ?? [], referrals: r.referrals,
+      subscriptionStatus: r.subscription_status,
+    }));
+    return {
+      cohort,
+      quarter: q,
+      targets: PILOT_TARGETS,
+      scorecard: scorecard(rows, now, today),
+      shops: rows.map((r) => ({
+        orgId: r.orgId, orgName: r.orgName, cohort: r.cohort, signedUpAt: r.signedUpAt,
+        activation: activation(r), reviewerMinutes: reviewerMinutes(r.staffActionTimes), filing: filingRecord(r, today),
+        churned: churned(r, now), lastOwnerActivity: r.lastOwnerActivity, referrals: r.referrals,
+      })),
+    };
+  }
+
+  async setPilotCohort(a: Actor, orgId: string, cohort: string | null) {
+    await this.requireAdmin(a);
+    await this.db.run(userCtx(a), (tx) => tx.exec(`select app.admin_set_pilot_cohort($1, $2)`, [orgId, cohort]));
+    await this.auditIn(orgId, 'pilot.cohort_set', 'organisation', orgId, a, { cohort });
+    return { orgId, cohort };
   }
 
   async resendInvite(a: Actor, userId: string) {

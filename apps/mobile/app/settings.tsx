@@ -1,6 +1,6 @@
 import { WHATSAPP_CONSENT } from '@vat-assist/shared';
 import { router, Stack, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Switch, View } from 'react-native';
 import { useFeatures } from '@/features';
 import { useSession } from '@/session';
@@ -11,6 +11,10 @@ interface Settings { debtorRemindersEnabled: boolean; scheduledInvoiceReminders:
 
 export default function SettingsScreen() {
   const { api, orgId, t } = useSession();
+  const [code, setCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (orgId) api<{ referral_code: string | null }>(`/orgs/${orgId}`).then((o) => setCode(o.referral_code)).catch(() => undefined);
+  }, [api, orgId]);
   const features = useFeatures();
   const [s, setS] = useState<Settings | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -60,6 +64,12 @@ export default function SettingsScreen() {
             <Switch value={s.whatsappOptIn} onValueChange={whatsapp} trackColor={{ true: C.ink }} accessibilityLabel={t('set.whatsapp')} />
             <View style={{ flex: 1 }}><P>{t('set.whatsapp')}</P></View>
           </View>
+        </Card>
+      )}
+      {code && (
+        <Card>
+          <P>Your referral code: {code}</P>
+          <P muted>Give it to other shop owners when they sign up.</P>
         </Card>
       )}
     </Screen>

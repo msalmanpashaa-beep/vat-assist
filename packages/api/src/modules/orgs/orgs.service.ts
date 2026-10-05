@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+import { REFERENCE_ALPHABET } from '../payments/rails';
 import { Injectable } from '@nestjs/common';
 import { CreateOrgBody, OpeningBalancesBody } from '@vat-assist/shared';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
@@ -27,21 +29,45 @@ export class OrgsService {
       const { id } = await tx.one<{ id: string }>(`select app.create_org_with_owner($1::jsonb) as id`, [JSON.stringify(body)]);
       await tx.pinOrg(id);
       await installChart(tx, id);
+      const referralCode = await this.assignReferralCode(tx, id);
+      let referred = false;
+      if (body.referralCode) {
+        const r = await tx.one<{ id: string | null }>(`select app.org_by_referral_code($1) as id`, [body.referralCode]);
+        if (r.id && r.id !== id) {
+          await tx.exec(`update organisations set referred_by_org_id = $2 where id = $1`, [id, r.id]);
+          referred = true;
+        }
+      }
       const period = await this.periods.ensure(tx, id, body.startDate);
       await this.audit.log(tx, 'org.created', 'organisation', id, {
         legalName: body.legalName,
         filingFrequency: body.filingFrequency,
         startDate: body.startDate,
       });
-      return { orgId: id, firstPeriodId: period.id, dueStandard: period.due_on, dueElectronic: period.extended_due_on };
+      return { orgId: id, firstPeriodId: period.id, dueStandard: period.due_on, dueElectronic: period.extended_due_on, referralCode, referred };
     });
+  }
+
+  /** Each shop gets a short code to give to other shop owners (pilot referrals). */
+  private async assignReferralCode(tx: Tx, orgId: string): Promise<string> {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      let code = 'NX';
+      for (const b of randomBytes(6)) code += REFERENCE_ALPHABET.charAt(b % REFERENCE_ALPHABET.length);
+      try {
+        await tx.savepoint('referral_code', () => tx.exec(`update organisations set referral_code = $2 where id = $1`, [orgId, code]));
+        return code;
+      } catch (e) {
+        if ((e as { code?: string }).code !== '23505') throw e;
+      }
+    }
+    throw new Error('could not allocate a referral code');
   }
 
   async get(tx: Tx, orgId: string) {
     return tx.one(
       `select id, legal_name, trading_name, legal_form, brn, vat_number, vat_registered_on, filing_frequency,
               files_and_pays_electronically, start_date, shop_type, default_locale, is_platform, debtor_reminders_enabled,
-              opening_vat_credit_cents, created_at
+              opening_vat_credit_cents, created_at, referral_code, pilot_cohort
        from organisations where id = $1`,
       [orgId],
     );

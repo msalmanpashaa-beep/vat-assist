@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
 import { AssignStaffBody, BulkReassignBody, FeatureFlagsBody, StaffInviteBody, TestEmailBody } from '@vat-assist/shared';
 import { z } from 'zod';
 import { type Actor, CurrentActor, userCtx } from '../../common/auth-context';
@@ -12,6 +12,9 @@ const MraListBody = z.object({ listDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 const RunBody = z.object({ now: z.string().datetime({ offset: true }).optional() });
 
 /** Nex-Gen platform administration: staff, sign-in controls, client assignments, feature flags, operations. */
+const PilotQuery = z.object({ cohort: z.string().regex(/^[a-z0-9-]{1,40}$/).optional(), quarter: z.string().regex(/^\d{4}-Q[1-4]$/).optional() });
+const PilotCohortBody = z.object({ cohort: z.string().regex(/^[a-z0-9-]{1,40}$/, 'lowercase letters, digits and dashes').nullable() });
+
 @Controller('admin')
 export class AdminController {
   constructor(
@@ -28,6 +31,18 @@ export class AdminController {
   @Post('staff')
   invite(@CurrentActor() a: Actor, @Body(new ZodBody(StaffInviteBody)) b: z.output<typeof StaffInviteBody>) {
     return this.admin.invite(a, b.email, b.fullName, b.role, b.orgIds);
+  }
+
+  /** Pilot scorecard for a cohort (or every client) and a calendar quarter (default: this one). */
+  @Get('pilot')
+  pilot(@CurrentActor() a: Actor, @Query('cohort') cohort?: string, @Query('quarter') quarter?: string) {
+    const q = PilotQuery.parse({ cohort: cohort || undefined, quarter: quarter || undefined });
+    return this.admin.pilot(a, q.cohort ?? null, q.quarter ?? null);
+  }
+
+  @Put('orgs/:orgId/pilot')
+  setPilot(@CurrentActor() a: Actor, @Param('orgId') orgId: string, @Body(new ZodBody(PilotCohortBody)) b: z.output<typeof PilotCohortBody>) {
+    return this.admin.setPilotCohort(a, orgId, b.cohort);
   }
 
   /** Sends a test email through the configured provider (to yourself unless another address is given). */

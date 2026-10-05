@@ -33,6 +33,8 @@ export const CreateOrgBody = z.object({
   startDate: isoDate,
   shopType: z.string().max(80).optional(),
   defaultLocale: LocaleSchema.default('en'),
+  /** The code of the shop that referred this one, if any (looks like NX7K3Q9M). */
+  referralCode: z.string().trim().toUpperCase().regex(/^NX[0-9A-Z]{6}$/, 'A referral code looks like NX7K3Q9M').optional(),
 });
 
 const namedAmount = z.object({
