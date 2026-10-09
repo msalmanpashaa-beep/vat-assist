@@ -18,7 +18,7 @@ const OUT = join(process.cwd(), 'demo-output');
 const OWNER_PHONE = '+23057100001';
 const OTHER_PHONE = '+23057100002';
 const OTP = process.env.OTP_DEV_FIXED_CODE ?? '000000';
-const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? 'whsec_dev_only_not_secret';
+const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? 'whsec_dev_only_secret';
 
 let n = 0;
 const step = (t: string) => console.log(`\n${String(++n).padStart(2, ' ')}. ${t}`);
