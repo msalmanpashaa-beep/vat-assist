@@ -22,9 +22,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
-    "@aws-sdk/client-s3": "^3.1144.0",
-    "@aws-sdk/s3-presigned-post": "^3.1144.0",
-    "@aws-sdk/s3-request-presigner": "^3.1144.0",
+    "@aws-sdk/client-s3": "^3.1146.0",
+    "@aws-sdk/s3-presigned-post": "^3.1146.0",
+    "@aws-sdk/s3-request-presigner": "^3.1146.0",
     "@nestjs/common": "^12.1.2",
     "@nestjs/core": "^12.1.2",
     "@nestjs/platform-express": "^12.1.2",
@@ -34,7 +34,7 @@
     "ioredis": "^6.0.0",
     "jose": "^6.2.12",
     "libphonenumber-js": "^1.13.14",
-    "nodemailer": "^10.0.13",
+    "nodemailer": "^10.0.15",
     "otplib": "^13.5.0",
     "pdfkit": "^0.20.2",
     "pg": "^8.23.1",
@@ -53,8 +53,8 @@
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.23.1",
     "@types/smtp-server": "^3.5.13",
-    "mailparser": "^3.9.33",
-    "smtp-server": "^3.19.16",
+    "mailparser": "^3.9.36",
+    "smtp-server": "^3.19.17",
     "typescript": "~6.0.3",
     "vitest": "^5.0.3"
   }
