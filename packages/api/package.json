@@ -55,7 +55,7 @@
     "@types/smtp-server": "^3.5.13",
     "mailparser": "^3.9.33",
     "smtp-server": "^3.19.16",
-    "typescript": "~6.0.3",
+    "typescript": "~7.0.2",
     "vitest": "^5.0.3"
   }
 }
