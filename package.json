@@ -30,9 +30,9 @@
     "bootstrap": "npm run bootstrap -w @vat-assist/api --"
   },
   "devDependencies": {
-    "turbo": "^2.11.6",
+    "turbo": "^2.11.9",
     "typescript": "~6.0.3",
-    "vite": "^8.3.2"
+    "vite": "^8.3.4"
   },
   "engines": {
     "node": ">=22.12"
